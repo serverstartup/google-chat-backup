@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+#
+# Quality gate. Aborta el commit si en el stage hay:
+#   1) credenciales o estado de Terraform (por nombre de fichero), o
+#   2) algún término de una denylist LOCAL (denylist.txt, gitignored).
+#
+# La denylist vive solo en tu máquina, así el término prohibido (p. ej. el
+# nombre del cliente) nunca aparece en un fichero versionado — ni en este hook.
+# El hook NO imprime el término que ha coincidido, solo el fichero, para no
+# volcarlo en los logs de la terminal.
+#
+# Saltar puntualmente (bajo tu responsabilidad): git commit --no-verify
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+fail=0
+
+staged="$(git diff --cached --name-only --diff-filter=ACM)"
+[ -z "$staged" ] && exit 0
+
+# 1) Credenciales / estado por nombre de fichero
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  case "$f" in
+    *client_secret*|*token.json|*.tfvars|*.tfstate|*.tfstate.*)
+      echo "pre-commit: '$f' no debe commitearse (credencial o estado de Terraform)."
+      fail=1 ;;
+  esac
+done <<EOF
+$staged
+EOF
+
+# 2) Denylist de contenido (local, gitignored). Una expresion regular por linea.
+deny="$root/denylist.txt"
+if [ -f "$deny" ]; then
+  while IFS= read -r term || [ -n "$term" ]; do
+    case "$term" in ''|\#*) continue ;; esac
+    while IFS= read -r f; do
+      [ -z "$f" ] && continue
+      if git show ":$f" 2>/dev/null | grep -iqE -- "$term"; then
+        echo "pre-commit: '$f' contiene un termino bloqueado por denylist.txt."
+        fail=1
+      fi
+    done <<EOF2
+$staged
+EOF2
+  done < "$deny"
+fi
+
+if [ "$fail" -ne 0 ]; then
+  echo ""
+  echo "Commit abortado por el quality gate. Corrige los ficheros y reintenta."
+  exit 1
+fi
+exit 0

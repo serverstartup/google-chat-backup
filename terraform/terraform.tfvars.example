@@ -1,0 +1,10 @@
+# Copia este fichero a terraform.tfvars y rellena tus valores.
+# terraform.tfvars está en .gitignore: no se sube al repo.
+
+project_id = "your-gcp-project-id"
+
+# --- Solo si quieres que Terraform cree el proyecto (avanzado) ---
+# create_project  = true
+# project_name    = "chatea"
+# billing_account = "XXXXXX-XXXXXX-XXXXXX"
+# org_id          = "123456789012"

@@ -1,0 +1,13 @@
+# Plantilla del quality gate. NO pongas aquí términos reales: este fichero SÍ se sube.
+#
+# Cópialo a denylist.txt (que está en .gitignore y NO se sube) y añade allí una
+# expresión regular por línea con lo que nunca debe entrar en un commit:
+#   - el nombre del cliente
+#   - el PROJECT_ID real
+#   - dominios o nombres internos
+#
+# El matching no distingue mayúsculas. Las líneas vacías y las que empiezan por # se ignoran.
+#
+# Ejemplo (esto va en denylist.txt, nunca aquí):
+#   nombre-del-cliente
+#   mi-project-id-real

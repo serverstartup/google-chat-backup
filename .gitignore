@@ -1,0 +1,46 @@
+# === Credenciales y tokens — NUNCA al repo ===
+client_secret*.json
+token.json
+*.credentials.json
+*.apps.googleusercontent.com.json
+
+# === Salidas del backup ===
+backup-*/
+poc-gchat/
+gchat-backup*/
+*.zip
+
+# === Terraform ===
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# === Python ===
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# === Contexto interno — NO público ===
+# Notas de trabajo con datos de cliente. Se queda en local, nunca se sube.
+CLAUDE.local.md
+# CLAUDE.md lo genera .agent/setup.py (skills); se regenera en cada ejecución.
+CLAUDE.md
+# Variables del script (rutas, filtros con nombres de espacios). Ver scripts/.env.example
+.env
+
+# Denylist del quality gate: términos prohibidos (cliente, project_id…). Solo local.
+denylist.txt
+
+# === SO / editor ===
+.DS_Store
+.idea/
+.vscode/
