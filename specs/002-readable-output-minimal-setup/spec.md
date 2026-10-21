@@ -39,8 +39,8 @@ without knowing the code, and the last line is the verdict.
 
 ### User Story 2 - Set up with what the machine already has (Priority: P1)
 
-A teammate with a Mac goes from nothing to a running backup using only Apple's command line
-tools (which bring `git` and `python3`), the repository and the client secret.
+A teammate on any operating system with Git and Python 3.9+ goes from nothing to a running
+backup with the repository, the client secret and one command.
 
 **Why this priority**: every extra tool is a question to the maintainer.
 
@@ -80,13 +80,17 @@ the environment on first use and runs the backup.
   NOT reach the terminal.
 - **FR-008**: A `--preview` flag MUST do what `GCHAT_DRY_RUN=true` does; the variable keeps
   working.
-- **FR-009**: One command at the repository root MUST create the Python environment with the
-  system `python3` on first use, install the dependencies and run the backup, passing its
-  arguments through.
+- **FR-009**: One command at the repository root MUST create the Python environment on first use,
+  install the dependencies and run the backup, passing its arguments through, on Windows, Linux
+  and macOS alike: a Python launcher (`python3 backup.py`, `py backup.py` on Windows), not a shell
+  script. *Amended 2026-10-21: it was `backup.sh`, which assumed a POSIX shell.*
 - **FR-010**: The dependencies MUST install on Python 3.9 (the macOS system Python) and newer.
 - **FR-011**: The default for parallel chats MUST be 4 (amends 001 FR-001, which said 1).
-- **FR-012**: The README MUST need only Apple's command line tools, `git clone`, the client
-  secret and the backup command.
+- **FR-012**: The README MUST assume only Git and Python 3.9+, on any operating system, and MUST
+  say where the client secret comes from (the maintainer) and who can read what (the client
+  secret identifies the app; the user's own sign-in decides whose chats are read).
+  *Amended 2026-10-21: it assumed macOS and installed Apple's command line tools.*
+- **FR-013**: Output MUST NOT crash on a console or file that is not UTF-8 (`✓`, `…` are replaced).
 
 ### Key Entities
 

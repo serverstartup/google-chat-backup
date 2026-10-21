@@ -19,7 +19,7 @@ and change the code. Making a backup is in the [README](README.md).
 ```
 google-chat-backup/
 ├── README.md             How to make a backup, step by step
-├── backup.sh             Launcher: creates scripts/.venv on first use and runs the script
+├── backup.py             Launcher: creates scripts/.venv on first use and runs the script
 ├── scripts/
 │   ├── gchat_backup.py   The exporter; each person runs it with their own account
 │   ├── requirements.txt  Its two Google dependencies

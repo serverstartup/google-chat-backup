@@ -26,3 +26,10 @@ All code tasks touch `scripts/gchat_backup.py` and run in order.
 - [X] T012 Capture a preview and a real run over 3 chats on `/usr/bin/python3` (3.9) and check FR-001..FR-008 and SC-001/SC-002 on the captured stderr/stdout
 - [X] T013 Fresh clone into an empty folder, place the client secret, run `./backup.sh --preview` with only the system `python3` (SC-003)
 - [X] T014 Error paths: no client secret, `GCHAT_WORKERS=abc`, unknown flag — check message shape and exit codes 1/1/2
+
+## Phase 4: Amendment — any operating system (2026-10-21)
+
+- [X] T015 [US2] Replace `backup.sh` with `backup.py` at the repo root: checks Python ≥ 3.9, creates `scripts/.venv` with `venv` (Windows `Scripts/python.exe`, else `bin/python`), installs `scripts/requirements.txt`, removes a half-built environment on failure, runs `scripts/gchat_backup.py` passing arguments and Ctrl-C through
+- [X] T016 [US1] Reconfigure stdout/stderr with `errors="replace"` in `scripts/gchat_backup.py` and `backup.py` so a non-UTF-8 console never crashes on `✓` or `…`; argparse `prog` becomes `backup.py`
+- [X] T017 [US2] README assumes only Git and Python 3.9+ on any OS; says the client secret comes from the maintainer; adds "Explanation: who can read what" with Google's sources
+- [ ] T018 Verify: fresh clone, `python3 backup.py --preview` and a real run on Python 3.9 and 3.12; a non-UTF-8 stderr (`PYTHONIOENCODING=ascii`) does not crash; Windows and Linux not available here, say so

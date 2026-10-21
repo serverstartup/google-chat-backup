@@ -7,21 +7,26 @@ Back up every Google Chat conversation you take part in (spaces, group chats and
 with their attachments) to your own disk, using your own Google account. It needs no admin
 rights and no Google Cloud tools: each person exports what they would see in Chat on the web.
 Built for one scenario: an organization is shutting down Google Workspace and you want to keep
-your chats before it goes. Tested on macOS.
+your chats before it goes.
 
 This page is for the person making a backup. Setting up Google Cloud, giving a teammate access,
 reverting everything at the end and changing the code are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-Before you start, ask the project maintainer for:
+**You need:** Git and [Python](https://www.python.org/downloads/) 3.9 or above (`python3 --version`;
+on Windows, `py --version`). The commands below use `python3`; on Windows type `py` instead.
 
-1. Access to the [serverstartup/google-chat-backup](https://github.com/serverstartup/google-chat-backup) repository.
-2. To be added as a test user of the app, with your work email.
-3. The `client_secret_….apps.googleusercontent.com.json` file, over a private channel. It is not in
-   the repository and must never be.
+**Ask the project maintainer for** three things before you start:
+
+1. Read access to the [serverstartup/google-chat-backup](https://github.com/serverstartup/google-chat-backup) repository.
+2. To be added as a test user of the app, with your work email. Without it, Google refuses your
+   sign-in with "Access blocked".
+3. The `client_secret_….apps.googleusercontent.com.json` file. The maintainer creates it once in
+   Google Cloud for the whole team and sends it to you over a private channel; it is never in the
+   repository. What it is for: [Explanation: who can read what](#explanation-who-can-read-what).
 
 | Section | You are… |
 |:--|:--|
-| [1. Get the code](#1-get-the-code) | starting from scratch |
+| [1. Get the code](#1-get-the-code) | holding the three things above |
 | [2. Preview your chats](#2-preview-your-chats) | ready for the first run |
 | [3. Run the backup](#3-run-the-backup) | happy with the list of chats |
 | [4. Hand over the backup](#4-hand-over-the-backup) | done |
@@ -33,46 +38,27 @@ Before you start, ask the project maintainer for:
 
 ### `TL;DR`
 
-1. Install Apple's command line tools: they bring `git` and `python3`, all this needs.
+1. Clone the repository and go into it.
    ```bash
-   xcode-select --install
+   git clone https://github.com/serverstartup/google-chat-backup.git && cd google-chat-backup
    ```
-   Expect: an installer opens, or a note that they are already installed.
-2. Clone the repository into your home folder. → [Clone the repository](#clone-the-repository)
-   ```bash
-   git clone https://github.com/serverstartup/google-chat-backup.git ~/google-chat-backup
-   ```
-   Expect: the folder `~/google-chat-backup` exists.
-3. Move the `client_secret` you were given into `scripts/`.
-   ```bash
-   mv ~/Downloads/client_secret_*.apps.googleusercontent.com.json ~/google-chat-backup/scripts/
-   ```
-   Expect: `ls ~/google-chat-backup/scripts/client_secret_*` shows one file.
-
-### Clone the repository
-
-A copy of the code in `~/google-chat-backup`:
-
-```bash
-git clone https://github.com/serverstartup/google-chat-backup.git ~/google-chat-backup
-```
-
-**If it fails:** the repository is private, so `git` needs your GitHub access. Without it, open the
-repository page while signed in to GitHub, click **Code → Download ZIP**, unzip it and rename the
-folder to `~/google-chat-backup`. Every command on this page assumes that folder.
+   Expect: you are in the `google-chat-backup` folder.
+2. Copy the `client_secret_….json` file the maintainer sent you into the `scripts/` folder, with
+   its name unchanged.
+   Expect: `scripts/` holds exactly one `client_secret_*.json` file.
 
 ---
 
 ## 2. Preview your chats
 
 The first run signs you in with Google and lists the chats it would back up, without downloading
-anything.
+anything. Run every command from the `google-chat-backup` folder.
 
 ### `TL;DR`
 
 1. Run the preview and sign in with your work account in the browser. → [Sign in with your account](#sign-in-with-your-account)
    ```bash
-   ~/google-chat-backup/backup.sh --preview
+   python3 backup.py --preview
    ```
    Expect: `as <your work email>`, the number of chats and their list.
 
@@ -81,7 +67,7 @@ anything.
 Google asks you in the browser who you are and what the script may read:
 
 ```bash
-~/google-chat-backup/backup.sh --preview
+python3 backup.py --preview
 ```
 
 The very first run also prepares a private Python environment in `scripts/.venv`; later runs skip
@@ -95,12 +81,10 @@ that.
 3. Accept the permissions: they are read-only (spaces, members and messages).
 4. Close the tab and go back to the terminal.
 
-**Verification:** the line under `[1/3] Signing in…` must show your work email. That is how the
-script knows who you are: it never sees your password; Google grants it read access for the account
-you signed in with, saved in `scripts/token.json`, and the script asks Google whose account that is.
-Your backup goes into a folder named after your username (the part of your email before the `@`).
-Later runs do not open the browser. Why nothing else is needed:
-[Explanation: why signing in is enough](#explanation-why-signing-in-is-enough).
+**Verification:** the line under `[1/2] Signing in…` must show your work email: that is the account
+whose chats will be backed up. Your sign-in is saved in `scripts/token.json`, so later runs do not
+open the browser. Your backup goes into a folder named after your username (the part of your email
+before the `@`).
 
 ---
 
@@ -110,13 +94,13 @@ Later runs do not open the browser. Why nothing else is needed:
 
 1. Run the backup. → [Run it](#run-it)
    ```bash
-   ~/google-chat-backup/backup.sh
+   python3 backup.py
    ```
    Expect: one `✓` line per chat and, last, `✓ Backed up N chats: …`.
 2. If it stops, or you stop it with Ctrl-C, run the same command again: it carries on where it
    left off.
    ```bash
-   ~/google-chat-backup/backup.sh
+   python3 backup.py
    ```
    Expect: chats already backed up show `(0 new)`.
 
@@ -125,20 +109,23 @@ Later runs do not open the browser. Why nothing else is needed:
 Downloads the messages and attachments of all your chats, 4 at a time:
 
 ```bash
-~/google-chat-backup/backup.sh
+python3 backup.py
 ```
 
-Leave it in an open terminal with the laptop plugged in: with hundreds of chats it takes hours,
-and chats with thousands of attachments are the slowest. The output looks like this:
+Leave it running with the computer plugged in: with hundreds of chats it takes hours, and chats
+with thousands of attachments are the slowest. The output looks like this:
 
 ```text
 [1/3] Signing in…
   as you@example.com
+
 [2/3] Listing chats…
   433 chats visible, 433 selected
-[3/3] Backing up 433 chats to /Users/you/google-chat-backup/scripts/gchat-backup/you (4 at a time)…
+
+[3/3] Backing up 433 chats to /home/you/google-chat-backup/scripts/gchat-backup/you (4 at a time)…
   ✓ [  1/433] Team space                  12,513 messages    687 attachments (12 new)
   ✓ [  2/433] Jane Doe                       81 messages     12 attachments (12 new)
+
 ✓ Backed up 433 chats: 120,034 messages, 9,447 attachments (371 new)
 ```
 
@@ -164,12 +151,10 @@ scripts/gchat-backup/<your-user>/
 1. Hand over the `scripts/gchat-backup/<your-user>/` folder to the maintainer, however you agree
    (a shared Dropbox folder, for example). It holds private conversations: never put it anywhere
    public.
-2. Delete your credentials from the machine.
-   ```bash
-   rm -f ~/google-chat-backup/scripts/token.json ~/google-chat-backup/scripts/client_secret_*.json
-   ```
-   Expect: `ls ~/google-chat-backup/scripts/token.json` says it does not exist.
-3. Optional: remove the app's access at [myaccount.google.com/connections](https://myaccount.google.com/connections).
+2. Delete `scripts/token.json` and the `client_secret_….json` file from `scripts/`.
+   Expect: neither file is left in `scripts/`.
+3. Optional: remove the app's access from your Google account at
+   [myaccount.google.com/connections](https://myaccount.google.com/connections).
 
 ---
 
@@ -178,8 +163,7 @@ scripts/gchat-backup/<your-user>/
 ### Reference: settings
 
 Nothing needs configuring. To change a default, put it in `scripts/.env` (copy
-`scripts/.env.example`) or in front of the command (`GCHAT_WORKERS=2 ~/google-chat-backup/backup.sh`).
-Relative paths are resolved from `scripts/`.
+`scripts/.env.example`). Relative paths are resolved from `scripts/`.
 
 | Setting | What it does | Default |
 |:--|:--|:--|
@@ -188,7 +172,7 @@ Relative paths are resolved from `scripts/`.
 | `GCHAT_MIN_FREE_GB` | stop when less free disk space is left, in GB | `20` |
 | `GCHAT_DRY_RUN` | `true`: same as `--preview` | `false` |
 | `GCHAT_CLIENT_SECRET` | path to the `client_secret` | the only `client_secret_*.json` in `scripts/` |
-| `GCHAT_TOKEN_FILE` | where Google's access token is saved | `token.json` |
+| `GCHAT_TOKEN_FILE` | where your Google sign-in is saved | `token.json` |
 | `GCHAT_SPACE_TYPES` | chat types: `SPACE`, `GROUP_CHAT`, `DIRECT_MESSAGE` | all three |
 | `GCHAT_SPACE_FILTER` | regular expression on the space name | all |
 | `GCHAT_SINCE` | only messages from this date on (`YYYY-MM-DD`) | all |
@@ -196,13 +180,27 @@ Relative paths are resolved from `scripts/`.
 
 Used by: [Run it](#run-it).
 
-### Explanation: why signing in is enough
+### Explanation: who can read what
 
-The script uses Google's user authentication: it acts as you and only sees what you would see in
-Google Chat on the web. That is why it needs no service account, no `gcloud` and no admin rights.
-The `client_secret` does not identify anyone: it identifies the app the maintainer registered in
-Google Cloud, and it is the same for the whole team. Who you are is decided by the browser sign-in;
-that is why each person gets their own `token.json`, which is never shared.
+Two separate things are involved, and only one of them is personal.
+
+- **The `client_secret` identifies the app, not a person.** It lets this script ask Google for
+  permission; on its own it reads nothing. Google treats it as non-confidential for desktop apps
+  ("Desktop apps are public clients and cannot keep secrets confidential"), which is why the
+  whole team shares one. It still stays out of the repository, so that only people the maintainer
+  chose can use the app.
+- **Your sign-in decides whose chats are read.** Google gives the script a token only after you
+  sign in and accept read-only permissions, and with that token the Chat API acts as you: it
+  lists only the spaces you are a member of ("Lists spaces the caller is a member of") and returns
+  what you would see in Chat on the web. Nobody can read another person's chats with this script,
+  not even the maintainer: it requests no administrator permissions.
+
+What follows from it: in a space you share, the backup includes the other members' messages, just
+as Chat shows them to you. And `scripts/token.json` is the key to *your* chats: never share it,
+and delete it when you finish ([4. Hand over the backup](#4-hand-over-the-backup)).
+
+Sources (read 2026-10-21): Google, [OAuth 2.0 for iOS & Desktop Apps](https://developers.google.com/identity/protocols/oauth2/native-app);
+Google Chat API, [`spaces.list`](https://developers.google.com/workspace/chat/api/reference/rest/v1/spaces/list).
 
 Used by: [Sign in with your account](#sign-in-with-your-account).
 
@@ -210,9 +208,8 @@ Used by: [Sign in with your account](#sign-in-with-your-account).
 
 This issue occurs when your email is not registered as a test user of the app, when you pick a
 personal account instead of your work one, or when you cancel the permissions screen. To resolve
-it, ask the maintainer to add your work email as a test user, delete
-`~/google-chat-backup/scripts/token.json` if it exists and run the
-[preview](#2-preview-your-chats) again with your work account.
+it, ask the maintainer to add your work email as a test user, delete `scripts/token.json` if it
+exists and run the [preview](#2-preview-your-chats) again with your work account.
 
 Used by: [Sign in with your account](#sign-in-with-your-account).
 

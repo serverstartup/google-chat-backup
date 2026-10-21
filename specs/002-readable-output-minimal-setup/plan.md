@@ -7,8 +7,8 @@
 Replace the timestamped `log()` with a small set of output helpers in `scripts/gchat_backup.py`
 (`step()`, `done()`, `failed()`, `warn()`, `fail()`), all writing to stderr except the preview
 list, which goes to stdout. Add `--preview`. Silence the two known library warnings. Add a
-root `backup.sh` that creates `scripts/.venv` with the system `python3` on first use and runs
-the script. Loosen `requirements.txt` to lower bounds so it installs on Python 3.9. Default
+root `backup.py` launcher (any OS) that creates `scripts/.venv` on first use and runs the
+script. Loosen `requirements.txt` to lower bounds so it installs on Python 3.9. Default
 `GCHAT_WORKERS` to 4. Rewrite the README setup around these.
 
 ## Technical Context
@@ -33,7 +33,7 @@ fresh clone with `/usr/bin/python3` for FR-009/FR-010
 ## Project Structure
 
 ```text
-backup.sh                 # new: launcher (venv on first use + run)
+backup.py                 # new: launcher (venv on first use + run), Windows/Linux/macOS
 scripts/gchat_backup.py   # output helpers, --preview, warnings filter, default workers 4
 scripts/requirements.txt  # lower bounds
 scripts/.env.example      # WORKERS default documented

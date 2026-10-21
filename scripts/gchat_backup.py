@@ -85,6 +85,13 @@ from googleapiclient.http import MediaIoBaseDownload
 
 _log_lock = threading.Lock()
 
+# A console or redirected file without UTF-8 (Windows, some terminals) must not crash on ✓ or …
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 
 def say(line=""):
     with _log_lock:
@@ -116,7 +123,7 @@ def fail(fact, hint=None, code=1):
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        prog="backup.sh", description="Back up the Google Chat conversations you take part in.")
+        prog="backup.py", description="Back up the Google Chat conversations you take part in.")
     parser.add_argument("--preview", action="store_true",
                         help="sign in and list the chats that would be backed up; download nothing")
     return parser.parse_args()
