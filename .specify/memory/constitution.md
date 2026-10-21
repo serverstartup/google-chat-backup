@@ -1,4 +1,6 @@
 <!--
+- 2.0.2 (PATCH): Principle III states where the output goes by default (scripts/gchat-backup/,
+  git-ignored) and names the env file that replaced terraform.tfvars.
 - 2.0.1 (PATCH): Principle IV points to docs/how-to/bootstrap.md, which absorbed
   docs/REVERT.md and docs/MANUAL_STEPS.md; Terraform lives in terraform/bootstrap/.
 Sync Impact Report
@@ -45,8 +47,10 @@ Rationale: exports take hours and get interrupted; repeating work costs time and
 
 - 0 credentials, 0 client names, 0 project identifiers and 0 exported data in git.
 - The `pre-commit` hook (`core.hooksPath .githooks`) with the local denylist MUST be active.
-- The backup output lives outside the repository (a Dropbox folder); the local files holding
-  sensitive data (`.env`, `terraform.tfvars`, `token.json`, `client_secret_*`) are ignored.
+- The backup output is never committed: by default it goes to `scripts/gchat-backup/`
+  (git-ignored), or to any folder outside the repository, such as a Dropbox folder. The local
+  files holding sensitive data (`scripts/.env`, `terraform/bootstrap/resources/env/.*.env`,
+  `token.json`, `client_secret_*`) are ignored.
 
 Rationale: the repository is shareable and the data belongs to a client.
 
@@ -101,4 +105,4 @@ Rationale: a backup that looks complete and is not is discovered when there is n
   MINOR: a new principle or section; PATCH: wording).
 - The operating context with client data lives in `CLAUDE.local.md` (not versioned).
 
-**Version**: 2.0.1 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-10-21
+**Version**: 2.0.2 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-10-21

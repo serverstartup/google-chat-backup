@@ -39,9 +39,8 @@ google-chat-backup: home-made Google Chat backup, reversible through Terraform
 
 - Terraform enables the Chat API and People API (disable_on_destroy=true, reversible)
 - scripts/gchat_backup.py: per-user exporter (user OAuth, no admin)
-- docs/: manual steps (no API) and revert guide
+- docs/how-to/bootstrap.md: Terraform, console steps, access and teardown
 - 0 credentials in the repo (.gitignore)
-
 MSG
 
 echo

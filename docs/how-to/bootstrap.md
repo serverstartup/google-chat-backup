@@ -231,6 +231,9 @@ Used by: [2. Register the app in the Google Cloud console](#2-register-the-app-i
   teardown never disables an API another workload needs. Here the APIs were enabled for this project
   alone and the teardown must leave the project as it was; check the Service Usage audit log before
   relying on it, and switch to `false` if the APIs were already in use.
+- **Your own credentials, no service account.** Terraform acts as the maintainer through
+  Application Default Credentials. A service account to impersonate would be one more resource
+  to create, grant and tear down, for a plan that runs a handful of times.
 - **The project id is not in the repository.** It names the organization, so it lives only in
   `.default.env`, and the saved plan (which holds it) is written outside the repository and deleted
   after the apply.
