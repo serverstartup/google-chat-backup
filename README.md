@@ -25,7 +25,8 @@ on Windows, `py --version`). The commands below use `python3`; on Windows type `
 **Ask the project maintainer for** three things before you start (the maintainer's side is
 [Give a teammate access](docs/how-to/bootstrap.md#3-give-a-teammate-access)):
 
-1. Read access to the [serverstartup/google-chat-backup](https://github.com/serverstartup/google-chat-backup) repository.
+1. Read access to the private [serverstartup/google-chat-backup](https://github.com/serverstartup/google-chat-backup)
+   repository. Accept the invitation GitHub emails you.
 2. To be added as a test user of the app, with your work email. Without it, Google refuses your
    sign-in with "Access blocked".
 3. The `client_secret_….apps.googleusercontent.com.json` file. The maintainer creates it once in
@@ -46,12 +47,19 @@ on Windows, `py --version`). The commands below use `python3`; on Windows type `
 
 ### `TL;DR`
 
-1. Clone the repository and go into it.
+1. Clone the repository. It is private, so Git asks you to sign in to GitHub the way it usually
+   does on your machine. Without Git access, use **Code → Download ZIP** on the repository page and
+   unzip it as `google-chat-backup`.
    ```bash
-   git clone https://github.com/serverstartup/google-chat-backup.git && cd google-chat-backup
+   git clone https://github.com/serverstartup/google-chat-backup.git
    ```
-   Expect: you are in the `google-chat-backup` folder.
-2. Copy the `client_secret_….json` file the maintainer sent you into the `scripts/` folder, with
+   Expect: a `google-chat-backup` folder.
+2. Go into it; every command on this page runs from there.
+   ```bash
+   cd google-chat-backup
+   ```
+   Expect: `backup.py` and `scripts/` are in the current folder.
+3. Copy the `client_secret_….json` file the maintainer sent you into the `scripts/` folder, with
    its name unchanged.
    Expect: `scripts/` holds exactly one `client_secret_*.json` file.
 
@@ -60,7 +68,7 @@ on Windows, `py --version`). The commands below use `python3`; on Windows type `
 ## 2. Preview your chats
 
 The first run signs you in with Google and lists the chats it would back up, without downloading
-anything. Run every command from the `google-chat-backup` folder.
+anything.
 
 ### `TL;DR`
 
@@ -86,7 +94,8 @@ that.
 1. A browser opens. Pick your **work** account, the one you use in Google Chat.
 2. If you see *"Google hasn't verified this app"*, click **Advanced** → **Go to …**. It is the
    project's own app, in testing mode.
-3. Accept the permissions: they are read-only (spaces, members and messages).
+3. Accept the permissions: read-only access to spaces, members and messages, plus your email
+   address, which names your backup folder.
 4. Close the tab and go back to the terminal.
 
 **Verification:** the line under `[1/2] Signing in…` must show your work email: that is the account
@@ -105,8 +114,8 @@ before the `@`).
    python3 backup.py
    ```
    Expect: one `✓` line per chat and, last, `✓ Backed up N chats: …`.
-2. If it stops, or you stop it with Ctrl-C, run the same command again: it carries on where it
-   left off.
+2. If it stops, or you stop it with Ctrl-C, run the same command again: it reads the messages
+   again and skips the attachments already downloaded.
    ```bash
    python3 backup.py
    ```
@@ -130,15 +139,14 @@ with thousands of attachments are the slowest. The output looks like this:
 [2/3] Listing chats…
   433 chats visible, 433 selected
 
-[3/3] Backing up 433 chats to /home/you/google-chat-backup/scripts/gchat-backup/you (4 at a time)…
+[3/3] Backing up 433 chats to <repository folder>/scripts/gchat-backup/you (4 at a time)…
   ✓ [  1/433] Team space                  12,513 messages    687 attachments (12 new)
   ✓ [  2/433] Jane Doe                       81 messages     12 attachments (12 new)
 
 ✓ Backed up 433 chats: 120,034 messages, 9,447 attachments (371 new)
 ```
 
-**Verification:** attachments stored in Google Drive are not downloaded; their link stays in the
-JSON. If free disk space drops below 20 GB the backup stops by itself
+Attachments stored in Google Drive are not downloaded; their link stays in the JSON. If free disk space drops below 20 GB the backup stops by itself
 ([Troubleshooting: the backup stops for lack of disk space](#troubleshooting-the-backup-stops-for-lack-of-disk-space)).
 The result is one folder per chat, `attachments/` only when it has any:
 
@@ -182,7 +190,7 @@ Nothing needs configuring. To change a default, put it in `scripts/.env` (copy
 | `GCHAT_CLIENT_SECRET` | path to the `client_secret` | the only `client_secret_*.json` in `scripts/` |
 | `GCHAT_TOKEN_FILE` | where your Google sign-in is saved | `token.json` |
 | `GCHAT_SPACE_TYPES` | chat types: `SPACE`, `GROUP_CHAT`, `DIRECT_MESSAGE` | all three |
-| `GCHAT_SPACE_FILTER` | regular expression on the space name | all |
+| `GCHAT_SPACE_FILTER` | regular expression on the space name, case-insensitive; when set, group chats and 1:1 chats are skipped (they have no name) | all |
 | `GCHAT_SINCE` | only messages from this date on (`YYYY-MM-DD`) | all |
 | `GCHAT_DOWNLOAD_ATTACHMENTS` | `false`: skip attachments | `true` |
 
@@ -226,6 +234,6 @@ Used by: [Sign in with your account](#sign-in-with-your-account).
 This issue occurs when free disk space drops below the minimum (`GCHAT_MIN_FREE_GB`, 20 GB by
 default): the backup stops cleanly before the disk fills up. To resolve it, free up space (if the
 backup is in Dropbox, right-click the folder → **Make online-only** once it has been uploaded) and
-run the same command again; nothing is downloaded twice.
+run the same command again; attachments already downloaded are skipped.
 
 Used by: [Run it](#run-it).

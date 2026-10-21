@@ -78,12 +78,13 @@ def classify(plan_json):
 
 
 def apply_command(env, plan_file):
-    """One line that works from any folder: cd, load the environment, apply this plan."""
+    """One line that works from any folder and leaves the shell where it was."""
     if sys.platform == "win32":
-        return (f'cd "{BOOTSTRAP_DIR}"; .\\..\\..\\scripts\\tf-env.ps1 -e {env}; '
-                f'terraform apply "{plan_file}"; Remove-Item "{plan_file}"')
-    return (f'cd "{BOOTSTRAP_DIR}" && . ../../scripts/tf-env.sh -e {env} && '
-            f'terraform apply "{plan_file}" && rm -f "{plan_file}"')
+        return (f'Push-Location "{BOOTSTRAP_DIR}"; .\\..\\..\\scripts\\tf-env.ps1 -e {env}; '
+                f'terraform apply "{plan_file}"; Pop-Location; Remove-Item "{plan_file}"')
+    # a subshell: the cd and the environment stay inside it, so the next command runs where you were
+    return (f'(cd "{BOOTSTRAP_DIR}" && . ../../scripts/tf-env.sh -e {env} && '
+            f'terraform apply "{plan_file}") && rm -f "{plan_file}"')
 
 
 def main():

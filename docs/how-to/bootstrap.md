@@ -25,6 +25,12 @@ Terraform enables the Google Chat API and the People API in the project. Its sta
 (`terraform/bootstrap/terraform.tfstate`, never committed), and it always runs through
 `scripts/tf-env.py`, which reads the project id from a git-ignored file.
 
+**You need:** a clone of the repository ([README: Get the code](../../README.md#1-get-the-code)),
+[Terraform](https://developer.hashicorp.com/terraform/install) 1.7 or above, the
+[Google Cloud CLI](https://cloud.google.com/sdk/docs/install), Python 3.9 or above, the editor or
+owner role on the project, and admin rights on the GitHub repository to invite teammates (with the
+[GitHub CLI](https://cli.github.com), or from the repository's *Settings → Collaborators*).
+
 ### `TL;DR`
 
 1. Sign in to Google Cloud with an account that is editor or owner of the project. → [Sign in to Google Cloud](#sign-in-to-google-cloud)
@@ -32,19 +38,21 @@ Terraform enables the Google Chat API and the People API in the project. Its sta
    gcloud auth application-default login
    ```
    Expect: the browser confirms the sign-in.
-2. From the repository folder, create the environment file and set `TF_VAR_project_id` in it.
+2. From the repository folder, create the environment file from its template.
    ```bash
    cp terraform/bootstrap/resources/env/template.env terraform/bootstrap/resources/env/.default.env
    ```
-   Expect: `.default.env` holds your project id instead of `changeme`.
-3. Plan. → [Plan the bootstrap](#plan-the-bootstrap)
+   Expect: `terraform/bootstrap/resources/env/.default.env` exists.
+3. Edit `.default.env` and replace `changeme` with the project id (the id, not the display name).
+   Expect: the line reads `TF_VAR_project_id=<your-project-id>`.
+4. Plan. → [Plan the bootstrap](#plan-the-bootstrap)
    ```bash
    python3 scripts/bootstrap-plan.py
    ```
    Expect: `2 to create` and, last, one command to apply the plan.
-4. Run the one command the plan printed.
+5. Run the one command the plan printed.
    Expect: `Apply complete! Resources: 2 added, 0 changed, 0 destroyed.`
-5. Plan again to check nothing is left.
+6. Plan again to check nothing is left.
    ```bash
    python3 scripts/bootstrap-plan.py
    ```
@@ -58,10 +66,8 @@ Application Default Credentials for the account Terraform acts as:
 gcloud auth application-default login
 ```
 
-**Prerequisites:** [Terraform](https://developer.hashicorp.com/terraform/install) 1.7 or above, the
-[Google Cloud CLI](https://cloud.google.com/sdk/docs/install), Python 3.9 or above, and the editor
-or owner role on the project. If your active `gcloud` account belongs to another organization, sign
-in with the right account here; the backup itself never uses these credentials.
+If your active `gcloud` account belongs to another organization, sign in with the right account
+here. The backup itself never uses these credentials: only this Terraform does.
 
 ### Plan the bootstrap
 
@@ -74,12 +80,15 @@ python3 scripts/bootstrap-plan.py
 The plan is saved outside the repository, because it holds the project id. The script prints what it
 imports, creates, changes (with the attributes of each change) and deletes; it refuses a plan that
 deletes or replaces anything; and it prints **one line** that changes to the right folder, loads
-the environment, applies exactly that plan and deletes it. Run that line as it is, from any folder.
+the environment, applies exactly that plan and deletes it, without changing the folder you are
+in. Run that line as it is.
 
 **If the APIs are already enabled** (by hand, with `gcloud`, or the state was lost), adopt them
 instead of creating them: `python3 scripts/bootstrap-plan.py --import`. Expect `2 to import` and
 `disable_on_destroy` as the only update: it exists only in the state, so applying makes no call to
-Google Cloud. Why it is not the default:
+Google Cloud. Then check the Service Usage audit log: if someone else enabled the APIs, set
+`"disable_on_destroy": false` in `terraform/bootstrap/resources/env/terraform-default.tfvars.json`
+and plan again, so the teardown never disables an API they rely on. Why import is not the default:
 [Explanation: the choices behind the Terraform](#explanation-the-choices-behind-the-terraform).
 
 ---
@@ -91,20 +100,22 @@ Three settings have no API and no Terraform support, so they are made by hand, o
 
 ### `TL;DR`
 
-1. Configure the Chat app: *APIs & Services* → *Google Chat API* → **Configuration**. Set any app
-   name and description, and `https://localhost` as the HTTP endpoint URL; leave every other
-   option unticked.
+1. Configure the Chat app: *APIs & Services* → *Google Chat API* → **Configuration**. Fill in the
+   required fields with anything (app name, description, avatar URL if asked), set
+   `https://localhost` as the HTTP endpoint URL, and leave every other option unticked.
    Expect: it saves without errors. Why a fake endpoint: [Explanation: what the console steps are for](#explanation-what-the-console-steps-are-for).
 2. Choose the consent screen's user type: *Google Auth Platform* (or *OAuth consent screen*) →
    **Internal** if it is offered, otherwise **External** in **Testing** mode.
-   Expect: the app is created with that type.
-3. Add exactly these three read-only scopes to the consent screen.
+   Expect: the app is created with that type. If External, add your own work email under
+   *Audience* → *Test users* before step 5, or your own preview in step 5 ends in "Access blocked".
+3. Add these three read-only Chat scopes to the consent screen.
    ```text
    https://www.googleapis.com/auth/chat.spaces.readonly
    https://www.googleapis.com/auth/chat.messages.readonly
    https://www.googleapis.com/auth/chat.memberships.readonly
    ```
-   Expect: the three scopes are listed, and no other.
+   Expect: the three scopes are listed. The sign-in scopes the script also asks for (`openid` and
+   your email address) need no declaring.
 4. Create the desktop OAuth client: *APIs & Services* → *Credentials* → **Create credentials** →
    **OAuth client ID** → **Desktop app**, and download its JSON.
    Expect: a `client_secret_….apps.googleusercontent.com.json` file.
@@ -155,7 +166,8 @@ When every backup is done, leave the project as it was: first what has no API, t
    Expect: `2 to delete`, both `google_project_service`, and one command to apply the plan.
 5. Run the one command the plan printed.
    Expect: `Apply complete! Resources: 0 added, 0 changed, 2 destroyed.`
-6. Each person deletes `scripts/token.json` and the `client_secret_….json` file from their copy.
+6. Delete your own `scripts/token.json` and `client_secret_….json`; teammates do the same in
+   [README: Hand over the backup](../../README.md#4-hand-over-the-backup).
 
 ### Plan the teardown
 
@@ -165,9 +177,11 @@ A plan that disables the two APIs:
 python3 scripts/bootstrap-plan.py --destroy
 ```
 
-**Prerequisites:** the project may be shared with other teams or workloads, and disabling an API
-affects the whole project. Confirm nobody else uses the Chat or People API first. To leave the APIs
-on, set `"disable_on_destroy": false` in
+> [!CAUTION]
+> Disabling an API affects the whole project, which may be shared with other teams or workloads.
+> Confirm nobody else uses the Chat or People API before applying this plan.
+
+To leave the APIs on, set `"disable_on_destroy": false` in
 `terraform/bootstrap/resources/env/terraform-default.tfvars.json`, run `bootstrap-plan.py` and apply
 before this step: the teardown then only removes them from the state.
 
@@ -179,8 +193,8 @@ before this step: the teardown then only removes them from the state.
 
 | Step | Automated? | Where |
 |:--|:--|:--|
-| Enable the Google Chat API (and People API, which the backup no longer uses) | Yes | `terraform/bootstrap/` |
-| Create the GCP project | Yes, optional (`create_project`) | `terraform/bootstrap/` |
+| Enable the Google Chat API (and People API, which the backup does not use) | Yes | `terraform/bootstrap/` |
+| Create the GCP project | Possible (`create_project`, `billing_account`, `org_id`, `project_name`), not covered by this guide | `terraform/bootstrap/` |
 | Chat app configuration | No API | [2. Register the app](#2-register-the-app-in-the-google-cloud-console) |
 | OAuth consent screen (scopes, test users) | No API | [2. Register the app](#2-register-the-app-in-the-google-cloud-console) |
 | Desktop OAuth client | No API, no `gcloud` | [2. Register the app](#2-register-the-app-in-the-google-cloud-console) |
