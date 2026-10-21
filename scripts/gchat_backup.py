@@ -52,7 +52,6 @@ template in scripts/.env.example):
 
 import argparse
 import contextlib
-import io
 import json
 import os
 import re
@@ -607,7 +606,7 @@ def main():
     if stopped:
         verdict("⚠", f"Stopped after {len(index):,} of {total:,} chats: {stopped}",
                 "Free up disk space, then run the same command again")
-        return 0
+        return 1
     if failed:
         verdict("✗", f"Backed up {len(index):,} of {total:,} chats, {len(failed):,} failed: {totals}",
                 "Run the same command again to retry the failed chats")

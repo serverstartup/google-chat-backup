@@ -15,7 +15,8 @@ gchat-backup*/
 *.tfstate
 *.tfstate.*
 *.tfvars
-!*.tfvars.example
+*.tfvars.json
+!terraform/bootstrap/resources/env/*.tfvars.json
 crash.log
 crash.*.log
 override.tf

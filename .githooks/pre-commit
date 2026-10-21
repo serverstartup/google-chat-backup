@@ -15,14 +15,15 @@ set -euo pipefail
 root="$(git rev-parse --show-toplevel)"
 fail=0
 
-staged="$(git diff --cached --name-only --diff-filter=ACM)"
+staged="$(git diff --cached --name-only --diff-filter=ACMR)"  # R: a renamed file can carry new content
 [ -z "$staged" ] && exit 0
 
 # 1) Credentials / state by file name
 while IFS= read -r f; do
   [ -z "$f" ] && continue
   case "$f" in
-    *client_secret*|*token.json|*.tfvars|*.tfstate|*.tfstate.*)
+    terraform/bootstrap/resources/env/*.tfvars.json) ;;  # public settings, committed on purpose
+    *client_secret*|*token.json|*.tfvars|*.tfvars.json|*.tfstate|*.tfstate.*)
       echo "pre-commit: '$f' must not be committed (credential or Terraform state)."
       fail=1 ;;
   esac
@@ -37,7 +38,9 @@ if [ -f "$deny" ]; then
     case "$term" in ''|\#*) continue ;; esac
     while IFS= read -r f; do
       [ -z "$f" ] && continue
-      if git show ":$f" 2>/dev/null | grep -iqE -- "$term"; then
+      # no grep -q: it exits on the first match, git show dies of SIGPIPE on a large file,
+      # and pipefail turns the match into a miss
+      if git show ":$f" 2>/dev/null | grep -iE -- "$term" >/dev/null; then
         echo "pre-commit: '$f' contains a term blocked by denylist.txt."
         fail=1
       fi

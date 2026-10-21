@@ -80,8 +80,10 @@ def classify(plan_json):
 def apply_command(env, plan_file):
     """One line that works from any folder and leaves the shell where it was."""
     if sys.platform == "win32":
+        # Windows PowerShell 5.1 has no &&: each step runs only if the previous one succeeded
         return (f'Push-Location "{BOOTSTRAP_DIR}"; .\\..\\..\\scripts\\tf-env.ps1 -e {env}; '
-                f'terraform apply "{plan_file}"; Pop-Location; Remove-Item "{plan_file}"')
+                f'if ($?) {{ terraform apply "{plan_file}" }}; $ok = $?; Pop-Location; '
+                f'if ($ok) {{ Remove-Item "{plan_file}" }}')
     # a subshell: the cd and the environment stay inside it, so the next command runs where you were
     return (f'(cd "{BOOTSTRAP_DIR}" && . ../../scripts/tf-env.sh -e {env} && '
             f'terraform apply "{plan_file}") && rm -f "{plan_file}"')
@@ -114,11 +116,12 @@ def main():
     extra = " -var=import_existing_apis=true" if args.do_import else " -destroy" if args.destroy else ""
     tf(args.env, f"terraform plan -input=false{extra} -out={plan_file.as_posix()}")
     step(3, 3, "Reading the plan")
-    shown = subprocess.run(["terraform", "show", "-json", str(plan_file)], cwd=BOOTSTRAP_DIR,
-                           capture_output=True, text=True)
-    if shown.returncode != 0:
-        fail(f"terraform show could not read {plan_file}", "Run the same command again to make a new plan")
-    counts, destructive, updates = classify(json.loads(shown.stdout))
+    # through tf-env too, into a file: tf-env prints its own "Running:" line on stdout
+    shown = plan_file.with_suffix(".json")
+    tf(args.env, f'terraform show -json "{plan_file.as_posix()}" > "{shown.as_posix()}"')
+    plan_json = json.loads(shown.read_text(encoding="utf-8"))
+    shown.unlink()  # it holds the project id, like the plan
+    counts, destructive, updates = classify(plan_json)
     say("  " + ", ".join(f"{counts[a]} to {a}" for a in ("import", "create", "update", "replace", "delete"))
         + f"; {counts['output']} output value(s) change")
     for line in updates:
