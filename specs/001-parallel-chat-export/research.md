@@ -73,7 +73,15 @@
   chats ya exportados y reescribe `messages.json`; esos JSON pequeños vuelven a tener contenido
   local. Los adjuntos, que son el 98 % del tamaño, no.
 
-## 8. Progreso legible con varios hilos
+## 8. Medición (2026-10-21)
+
+- 20 espacios sin adjuntos: 59 s con 1 hilo, 19 s con 4 (×3,1), 0 reintentos.
+- 4 espacios con adjuntos, uno dominante (18 adjuntos): 44 s con 1 hilo, 85 s con 4. El tiempo
+  lo fija el chat más lento y su latencia de descarga varía entre pasadas; no hubo reintentos.
+  El paralelismo no acelera un chat grande por dentro; paralelizar adjuntos dentro de un chat
+  queda fuera de esta funcionalidad (choca con las 15 lecturas/s por espacio si se abusa).
+
+## 9. Progreso legible con varios hilos
 
 - **Decision**: `log()` bajo candado; cada línea lleva el contador global `[n/total]` y el
   nombre del chat al empezar y al terminar.

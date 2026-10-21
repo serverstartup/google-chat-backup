@@ -93,7 +93,9 @@ scripts/gchat-backup/<usuario>/
 ### Más rápido: varios chats a la vez
 
 `GCHAT_WORKERS=4` en `scripts/.env` exporta 4 chats a la vez (por defecto, 1). Medido el
-2026-10-21 con 20 espacios: 59 s con 1 hilo, 19 s con 4, sin ningún reintento por cuota. Las
+2026-10-21 con 20 espacios y sin adjuntos: 59 s con 1 hilo, 19 s con 4, sin ningún reintento
+por cuota. Ayuda cuando hay muchos chats; dentro de uno los adjuntos se bajan de uno en uno, y
+un chat con miles de adjuntos tarda lo mismo con 1 hilo que con 4. Las
 cuotas de Google (3000 lecturas por minuto y proyecto) quedan muy lejos; si aun así Google
 responde "demasiadas peticiones", el script espera y reintenta solo. Máximo 16.
 

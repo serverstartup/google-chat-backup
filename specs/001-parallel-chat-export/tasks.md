@@ -66,8 +66,8 @@ es paralelizable entre sí; solo la documentación lo es.
 
 - [X] T017 [P] Documentar `GCHAT_WORKERS` en la cabecera de `scripts/gchat_backup.py` y en `scripts/.env.example` (recomendado 4)
 - [X] T018 [P] Añadir al `README.md` una sección corta: cómo elegir hilos y cómo marcar "solo en línea" en Dropbox desde el Finder, indicando que no hay orden de terminal en macOS 15
-- [ ] T019 `py_compile`, comprobación de la denylist sobre el historial, commit en la rama `001-parallel-chat-export` y merge a `main`
-- [ ] T020 Relanzar la sincronización real con `GCHAT_WORKERS=4` y re-armar la vigilancia de consumo
+- [ ] T019 `py_compile`, comprobación de la denylist sobre el historial, commit en la rama `001-parallel-chat-export` y merge a `main` — commit hecho en la rama (`e0feb32`); merge a `main` y push pendientes de que Julio lo pida (regla git.md)
+- [X] T020 Relanzar la sincronización real con `GCHAT_WORKERS=4` y re-armar la vigilancia de consumo
 
 ---
 

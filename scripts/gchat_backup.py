@@ -40,9 +40,10 @@ plantilla en scripts/.env.example):
   GCHAT_SINCE           exportar solo mensajes desde esta fecha, p. ej. 2024-01-01   [todo]
   GCHAT_DOWNLOAD_ATTACHMENTS  true/false                             [true]
   GCHAT_DRY_RUN         true/false: solo listar qué se exportaría    [false]
-  GCHAT_WORKERS         chats que se exportan a la vez, de 1 a 16. Con 4 va unas 3 veces
-                        más rápido sin acercarse a las cuotas de Google; los reintentos
-                        ante "demasiadas peticiones" son automáticos.  [1]
+  GCHAT_WORKERS         chats que se exportan a la vez, de 1 a 16. Acelera cuando hay muchos
+                        chats; dentro de un chat los adjuntos siguen yendo de uno en uno, así
+                        que un chat con miles de adjuntos tarda lo mismo. Los reintentos ante
+                        "demasiadas peticiones" son automáticos.  [1]
   GCHAT_MIN_FREE_GB     espacio libre mínimo en disco, en GB. Por debajo, el backup
                         se detiene limpio (guarda index y manifest) en vez de
                         llenar el disco. Relanzar continúa donde se quedó.  [20]
