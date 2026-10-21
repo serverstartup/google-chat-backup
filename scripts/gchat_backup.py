@@ -9,7 +9,8 @@ It does not need administrator permissions.
 What it saves (in GCHAT_OUT_DIR/<user>/, where <user> is the local part of the email):
   manifest.json                  who exported, when, with which parameters, and a summary
   index.json                     list of exported chats (id, folder, name, type, number of messages)
-  <YYYY-MM-DD>_<chat>/           one folder per chat: date of the first message + name
+  <YYYY>/<MM>/<chat>/            one folder per chat, by default under the year and month of its
+                                 last message (GCHAT_FOLDER_TEMPLATE)
     space.json                   chat data exactly as the API returns it
     members.json                 members (with name and email)
     messages.json                messages in chronological order, original API JSON
@@ -20,8 +21,9 @@ What it saves (in GCHAT_OUT_DIR/<user>/, where <user> is the local part of the e
   without a name, its members' names. If two chats yield the same folder, the id is appended.
 
 It can be run several times: it rewrites the messages and does not download again
-attachments that already exist. Each chat keeps its folder even if it is renamed later
-(it is recognised by the id saved in space.json).
+attachments that already exist. Each chat is recognised by the id saved in its space.json,
+wherever its folder is; when the template gives it another place (a new month, a changed
+template), the folder is moved there with a single rename.
 
 Dependencies: scripts/requirements.txt (see CONTRIBUTING.md).
 
@@ -32,6 +34,11 @@ template in scripts/.env.example):
                         [the only client_secret_*.json in scripts/]
   GCHAT_TOKEN_FILE      path where the session token is saved       [token.json]
   GCHAT_OUT_DIR         output folder                                [gchat-backup]
+  GCHAT_FOLDER_TEMPLATE where each chat goes inside <user>/; / separates folder levels.
+                        {name} chat name, {last} / {first} date of the last / first message
+                        (strftime codes: {last:%Y%m%d}; a bare {last} is yyyymmdd),
+                        {type} space, group-chat or direct-message, {id} short id
+                        [{last:%Y}/{last:%m}/{name}]
   GCHAT_SPACE_TYPES     types to export, comma-separated             [SPACE,GROUP_CHAT,DIRECT_MESSAGE]
                         SPACE = named space, GROUP_CHAT = unnamed group,
                         DIRECT_MESSAGE = 1:1 chat
@@ -56,8 +63,10 @@ import json
 import os
 import re
 import shutil
+import string
 import sys
 import threading
+import time
 import unicodedata
 import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -207,6 +216,48 @@ if not _workers_raw.isdigit() or not 1 <= int(_workers_raw) <= 16:
          "Set GCHAT_WORKERS to a value from 1 to 16 in scripts/.env, or remove it to use 4")
 WORKERS = int(_workers_raw)
 
+
+class Stamp:
+    """A date in the folder template: {last:%Y%m%d}; a bare {last} is %Y%m%d; no date is 'undated'."""
+
+    def __init__(self, iso):
+        ok = iso and re.match(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", iso)
+        self.dt = datetime.strptime(iso[:19], "%Y-%m-%dT%H:%M:%S") if ok else None  # UTC, as Google sends it
+
+    def __format__(self, spec):
+        return self.dt.strftime(spec or "%Y%m%d") if self.dt else "undated"
+
+
+FOLDER_FIELDS = ("name", "last", "first", "type", "id")
+
+
+def render_folder(template, fields):
+    """Folder of a chat relative to the user's backup; ValueError says what is wrong with the template."""
+    for _, field, spec, conversion in string.Formatter().parse(template):
+        if field is None:
+            continue
+        if field not in FOLDER_FIELDS:
+            raise ValueError(f"unknown placeholder {{{field}}}" if field else "a placeholder without a name, {}")
+        if conversion or "{" in (spec or ""):
+            raise ValueError(f"{{{field}}} takes only a date format such as :%Y%m%d")
+    path = template.format_map(fields)
+    if any(level in ("", ".", "..") for level in path.split("/")):
+        raise ValueError(f"it gives {path!r}, an absolute path or one with an empty, '.' or '..' level")
+    forbidden = set('<>:"\\|?*').intersection(path)
+    if forbidden:
+        raise ValueError(f"it gives {path!r}, with {''.join(sorted(forbidden))!r}, not valid in a folder name")
+    return path
+
+
+FOLDER_TEMPLATE = env("GCHAT_FOLDER_TEMPLATE", "{last:%Y}/{last:%m}/{name}")
+try:  # checked once with sample values, before signing in
+    render_folder(FOLDER_TEMPLATE, {"name": "chat", "last": Stamp("2024-03-12T10:00:00Z"),
+                                    "first": Stamp("2023-01-05T09:00:00Z"), "type": "space", "id": "AAAA"})
+except (ValueError, KeyError, IndexError) as e:
+    fail(f"GCHAT_FOLDER_TEMPLATE is not valid, {e}: {FOLDER_TEMPLATE!r}",
+         "Use {name}, {last}, {first}, {type} and {id}, with / between folder levels, "
+         "for example {last:%Y}/{last:%m}/{name}")
+
 SCOPES = [
     "openid",
     "https://www.googleapis.com/auth/userinfo.email",
@@ -329,26 +380,51 @@ def chat_label(space, members, exporter_email):
     return space.get("displayName") or ", ".join(other_members(members, exporter_email)) or "(unnamed)"
 
 
-def folder_name(space, members, messages, exporter_email):
-    """<YYYY-MM-DD>_<chat>: date of the first message and name of the space or of the people."""
-    first = (messages[0].get("createTime") if messages else None) or space.get("createTime") or ""
-    date = first[:10] if re.match(r"\d{4}-\d{2}-\d{2}", first) else "undated"
+SPACE_TYPE_WORDS = {"SPACE": "space", "GROUP_CHAT": "group-chat", "DIRECT_MESSAGE": "direct-message"}
+
+
+def folder_path(space, members, messages, exporter_email):
+    """Folder of a chat relative to the user's backup, from GCHAT_FOLDER_TEMPLATE."""
     if space.get("displayName"):
         name = slug(space["displayName"])
     else:
         people = other_members(members, exporter_email)
         name = "_".join(slug(n, 30) for n in people[:4]) + ("_and-more" if len(people) > 4 else "")
-    return f"{date}_{name or 'unnamed'}"
+    created = space.get("createTime")
+    # lastActiveTime is Google's "timestamp of the last message in the space"; messages are in
+    # chronological order, and with GCHAT_SINCE they may not reach back to the first one
+    last = space.get("lastActiveTime") or (messages[-1].get("createTime") if messages else None) or created
+    first = (messages[0].get("createTime") if messages else None) or created
+    return render_folder(FOLDER_TEMPLATE, {
+        "name": name or "unnamed", "last": Stamp(last), "first": Stamp(first),
+        "type": SPACE_TYPE_WORDS.get(space.get("spaceType"), "chat"), "id": short_id(space["name"]),
+    })
 
 
 def existing_folders(user_dir: Path):
-    """space name -> folder already created in a previous run (by the id in space.json)."""
-    found = {}
-    for f in user_dir.glob("*/space.json"):
-        name = read_json(f, {}).get("name")
-        if name:
-            found[name] = f.parent
-    return found
+    """(space name -> folder from earlier runs, folders whose space.json cannot be read).
+
+    A folder is recognised by the space.json inside it, at any depth, so it is found wherever an
+    earlier template put it. Only space.json is read: attachments are never opened, so Dropbox
+    "online-only" files stay in the cloud.
+    """
+    found, unreadable = {}, []
+    for f in user_dir.rglob("space.json"):
+        levels = f.relative_to(user_dir).parts
+        if "attachments" in levels[:-1] or any(level.startswith(".") for level in levels):
+            continue
+        data = None
+        for _ in range(3):
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+                break
+            except (OSError, ValueError):
+                time.sleep(1)  # an online-only file can read empty while Dropbox fetches it
+        if isinstance(data, dict) and data.get("name"):
+            found[data["name"]] = f.parent
+        else:
+            unreadable.append(f.parent)
+    return found, unreadable
 
 
 def wanted(space):
@@ -397,18 +473,40 @@ def download_attachment(chat, resource_name, dest: Path):
     return "downloaded"
 
 
+MOVED = [0]  # chat folders moved to where the template puts them, this run
+
+
+def prune_empty(folder: Path, stop: Path):
+    """Removes the folders a move left empty (a Finder .DS_Store does not count), up to stop."""
+    while folder != stop and folder.is_dir():
+        leftovers = list(folder.iterdir())
+        if any(p.name != ".DS_Store" for p in leftovers):
+            return
+        for p in leftovers:
+            p.unlink()
+        folder.rmdir()
+        folder = folder.parent
+
+
 def resolve_space_dir(space, members, messages, user_dir: Path, exporter_email, known):
     with _folders_lock:
-        if space["name"] in known:
-            return known[space["name"]]
-        target = user_dir / folder_name(space, members, messages, exporter_email)
+        target = user_dir / folder_path(space, members, messages, exporter_email)
+        current = known.get(space["name"])
+        if current == target:
+            return current
         owner = read_json(target / "space.json", {}).get("name") if target.exists() else None
-        if target.exists() and owner and owner != space["name"]:
-            # the folder belongs to another chat with the same date and name
+        if target.exists() and ((owner and owner != space["name"]) or current is not None):
+            # another chat renders the same path, or a leftover folder holds it: the id tells them apart
             target = target.with_name(f"{target.name}_{short_id(space['name'])}")
-        # (if it exists without space.json, it is from an earlier interruption of this same chat: it is reused)
+        if current is not None and current != target:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            current.rename(target)  # one rename: no file content is read, online-only files stay in the cloud
+            prune_empty(current.parent, user_dir)
+            MOVED[0] += 1
+        # (a new chat whose folder exists without space.json is from an earlier interruption: it is reused)
         legacy = user_dir / "spaces" / short_id(space["name"])  # old layout spaces/<id>/
-        if legacy.is_dir() and not target.exists():
+        if current is None and legacy.is_dir() and not target.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
             legacy.rename(target)
         target.mkdir(parents=True, exist_ok=True)
         # space.json from the start: if interrupted halfway, the next run recognises the folder
@@ -459,7 +557,7 @@ def export_space(chat, space, user_dir: Path, exporter_email, known):
     return {
         "label": label,
         "id": space_id,
-        "folder": space_dir.name,
+        "folder": space_dir.relative_to(user_dir).as_posix(),
         "name": space["name"],
         "displayName": space.get("displayName"),
         "spaceType": space.get("spaceType"),
@@ -507,7 +605,13 @@ def main():
         return 0
 
     user_dir.mkdir(parents=True, exist_ok=True)
-    known = existing_folders(user_dir)
+    known, unreadable = existing_folders(user_dir)
+    if unreadable:
+        # without space.json nothing tells which chat a folder holds: a new folder could duplicate it
+        fail(f"{len(unreadable)} chat folder(s) with a space.json that cannot be read, "
+             f"the first one {unreadable[0]}",
+             "Open that folder so Dropbox downloads the file, or move the folder out of the backup, "
+             "then run the same command again")
     started = datetime.now(timezone.utc).isoformat()
     total = len(spaces)
     width = len(str(total))
@@ -588,8 +692,10 @@ def main():
             "downloadAttachments": DOWNLOAD_ATTACHMENTS,
             "minFreeGb": MIN_FREE_GB,
             "workers": WORKERS,
+            "folderTemplate": FOLDER_TEMPLATE,
         },
         "spaces": len(index),
+        "foldersMoved": MOVED[0],
         "messages": sum(s["messages"] for s in index),
         "failed": failed,
         "stoppedEarly": stopped,
@@ -599,6 +705,8 @@ def main():
     attachments = sum(e["attachments"] for e in index)
     new = sum(e["attachmentsDownloaded"] for e in index)
     totals = f"{messages:,} messages, {attachments:,} attachments ({new:,} new)"
+    if MOVED[0]:
+        totals += f", {MOVED[0]:,} folders moved to the layout of GCHAT_FOLDER_TEMPLATE"
     again = "Run the same command again: it carries on without downloading anything twice"
     if interrupted:
         verdict("⚠", f"Interrupted after {len(index):,} of {total:,} chats: {totals}", again)
