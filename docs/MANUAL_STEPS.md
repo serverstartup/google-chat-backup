@@ -1,55 +1,53 @@
-# Pasos manuales (sin API)
+# Manual steps (no API)
 
-Estos tres pasos **no tienen API ni soporte en `gcloud`/Terraform**. Hay que hacerlos
-una vez, a mano, en la consola de Google Cloud, con el proyecto correcto seleccionado
-en el selector de arriba. Son rápidos.
+These three steps have **no API and no `gcloud` or Terraform support**. Do them once, by hand,
+in the Google Cloud console, with the right project selected in the picker at the top.
 
-> Requisito previo: haber aplicado `terraform/` (APIs habilitadas).
+> Prerequisite: `terraform/` applied (APIs enabled).
 
-## 1. Configuración de la Chat app
+## 1. Chat app configuration
 
-`APIs y servicios` → `Google Chat API` → pestaña **Configuración**.
+`APIs & Services` → `Google Chat API` → **Configuration** tab.
 
-- **App name:** cualquiera (p. ej. `Backup Chat`).
-- **Description:** obligatoria, cualquier texto.
-- **HTTP endpoint URL:** `https://localhost` (no se usará nunca; es solo un requisito del formulario).
-- No hace falta marcar "Join spaces", "App Home", comandos ni visibilidad: no vamos a
-  usar ningún bot, solo leer con tu cuenta.
+- **App name:** anything (for example `Chat Backup`).
+- **Description:** required, any text.
+- **HTTP endpoint URL:** `https://localhost` (never used; the form just requires one).
+- No need to tick "Join spaces", "App Home", commands or visibility: there is no bot here, only
+  reads with each person's own account.
 
-Guarda. Sin este paso, la API devuelve error aunque esté habilitada.
+Save. Without this step the API returns an error even though it is enabled.
 
-## 2. Pantalla de consentimiento OAuth
+## 2. OAuth consent screen
 
-`APIs y servicios` → **Pantalla de consentimiento de OAuth**.
+`APIs & Services` → **OAuth consent screen** (in the newer console: *Google Auth Platform*).
 
-- **Tipo de usuario:**
-  - Si el proyecto pertenece a la organización de Workspace y puedes elegir **Internal**,
-    es lo más cómodo (sin aviso de app sin verificar ni límite de usuarios).
-  - Si no, **External** en modo **Testing**, y añade en "Usuarios de prueba" las cuentas
-    que vayan a ejecutar el backup.
-- **Scopes:** añade exactamente estos tres (de solo lectura):
+- **User type:**
+  - If the project belongs to the Workspace organization and you can pick **Internal**, that is
+    the simplest option (no unverified-app warning, no user limit).
+  - Otherwise, **External** in **Testing** mode, and add under *Audience* → *Test users* every
+    account that will run the backup.
+- **Scopes:** add exactly these three (read-only):
   ```
   https://www.googleapis.com/auth/chat.spaces.readonly
   https://www.googleapis.com/auth/chat.messages.readonly
   https://www.googleapis.com/auth/chat.memberships.readonly
   ```
-  No hace falta ningún scope de directorio: los mensajes ya traen el nombre y el email
-  de cada autor.
+  No directory scope is needed: messages and members already carry each person's name and email.
 
-## 3. Cliente OAuth de escritorio
+## 3. Desktop OAuth client
 
-`APIs y servicios` → `Credenciales` → **Crear credenciales** → **ID de cliente de OAuth**
-→ tipo **Aplicación de escritorio**.
+`APIs & Services` → `Credentials` → **Create credentials** → **OAuth client ID** → type
+**Desktop app**.
 
-- Crea y **descarga el JSON**.
-- Guárdalo en la carpeta `scripts/` del repo con su nombre tal cual
-  (`client_secret_...apps.googleusercontent.com.json`). El `.gitignore` ya lo excluye.
+- Create it and **download the JSON**.
+- Save it in the repo's `scripts/` folder under its original name
+  (`client_secret_...apps.googleusercontent.com.json`). `.gitignore` already excludes it.
 
-> Este tipo de cliente **no se puede crear por API ni por `gcloud`**: es obligatoriamente
-> manual. Es el motivo principal por el que este paso no está en Terraform.
+> This client type **cannot be created through an API or `gcloud`**: it is manual by necessity,
+> and the main reason this step is not in Terraform.
 
-## Comprobación
+## Check
 
-Desde `scripts/`, con `GCHAT_DRY_RUN=true`, el script debe listar tus espacios. Si en el
-login sale "Acceso bloqueado por política del administrador", la organización bloquea el
-consentimiento OAuth de apps no aprobadas y esta vía no es viable para esa cuenta.
+From `scripts/`, with `GCHAT_DRY_RUN=true`, the script must list your spaces. If the login shows
+"Access blocked by your administrator's policy", the organization blocks OAuth consent for
+unapproved apps and this route does not work for that account.

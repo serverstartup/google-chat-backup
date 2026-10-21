@@ -1,14 +1,14 @@
 output "project_id" {
-  description = "Proyecto sobre el que se ha trabajado."
+  description = "Project that was worked on."
   value       = var.project_id
 }
 
 output "enabled_services" {
-  description = "APIs habilitadas por este plan."
+  description = "APIs enabled by this plan."
   value       = [for s in google_project_service.apis : s.service]
 }
 
 output "next_steps" {
-  description = "Recordatorio: lo que falta es manual."
-  value       = "APIs habilitadas. Ahora los pasos de docs/MANUAL_STEPS.md: pantalla de consentimiento, cliente OAuth de escritorio y config de la Chat app. No tienen API."
+  description = "Reminder: what is left is manual."
+  value       = "APIs enabled. Next, the steps in docs/MANUAL_STEPS.md: consent screen, desktop OAuth client and Chat app configuration. They have no API."
 }

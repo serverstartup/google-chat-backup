@@ -1,59 +1,75 @@
 #!/usr/bin/env python3
 """
-gchat_backup.py — Copia local de Google Chat con la cuenta de quien lo ejecuta.
+gchat_backup.py — Local copy of Google Chat with the account of whoever runs it.
 
-Usa autenticación de USUARIO (OAuth, "iniciar sesión con Google"): solo ve y
-exporta los espacios, grupos y chats privados en los que esa persona es miembro.
-No necesita permisos de administrador.
+Uses USER authentication (OAuth, "sign in with Google"): it only sees and
+exports the spaces, groups and private chats that person is a member of.
+It does not need administrator permissions.
 
-Qué guarda (en GCHAT_OUT_DIR/<usuario>/, donde <usuario> es la parte local del email):
-  manifest.json                  quién exportó, cuándo, con qué parámetros y resumen
-  index.json                     lista de chats exportados (id, carpeta, nombre, tipo, nº mensajes)
-  <AAAA-MM-DD>_<chat>/           una carpeta por chat: fecha del primer mensaje + nombre
-    space.json                   datos del chat tal como los da la API
-    members.json                 miembros (con nombre y email)
-    messages.json                mensajes en orden cronológico, JSON original de la API
-                                 (autor con nombre y email; los hilos van en el campo thread)
-    attachments/                 adjuntos subidos al chat (los de Drive quedan como enlace)
+What it saves (in GCHAT_OUT_DIR/<user>/, where <user> is the local part of the email):
+  manifest.json                  who exported, when, with which parameters, and a summary
+  index.json                     list of exported chats (id, folder, name, type, number of messages)
+  <YYYY-MM-DD>_<chat>/           one folder per chat: date of the first message + name
+    space.json                   chat data exactly as the API returns it
+    members.json                 members (with name and email)
+    messages.json                messages in chronological order, original API JSON
+                                 (author with name and email; threads go in the thread field)
+    attachments/                 attachments uploaded to the chat (Drive ones stay as a link)
 
-  <chat> es el nombre del espacio; en un chat 1 a 1, el de la otra persona; en un grupo
-  sin nombre, el de sus miembros. Si dos chats dan la misma carpeta, se añade el id.
+  <chat> is the space name; in a 1:1 chat, the other person's name; in a group
+  without a name, its members' names. If two chats yield the same folder, the id is appended.
 
-Se puede ejecutar varias veces: reescribe los mensajes y no vuelve a bajar
-adjuntos que ya existen. Cada chat conserva su carpeta aunque luego cambie de nombre
-(se reconoce por el id guardado en space.json).
+It can be run several times: it rewrites the messages and does not download again
+attachments that already exist. Each chat keeps its folder even if it is renamed later
+(it is recognised by the id saved in space.json).
 
-Dependencias:
-  pip install google-api-python-client google-auth-oauthlib
+Dependencies: scripts/requirements.txt (see CONTRIBUTING.md).
 
-Variables de entorno (también se leen de scripts/.env, que está en .gitignore;
-plantilla en scripts/.env.example):
-  GCHAT_CLIENT_SECRET  (obligatoria) ruta al JSON del cliente OAuth "Aplicación de escritorio"
-  GCHAT_TOKEN_FILE      ruta donde guardar el token de sesión       [token.json]
-  GCHAT_OUT_DIR         carpeta de salida                            [./gchat-backup]
-  GCHAT_SPACE_TYPES     tipos a exportar, separados por comas        [SPACE,GROUP_CHAT,DIRECT_MESSAGE]
-                        SPACE = espacio con nombre, GROUP_CHAT = grupo sin nombre,
-                        DIRECT_MESSAGE = chat 1 a 1
-  GCHAT_SPACE_FILTER    expresión regular sobre el nombre del espacio (sin distinguir
-                        mayúsculas). Si se define, solo entran espacios con nombre que
-                        coincidan; los grupos y chats 1 a 1 (que no tienen nombre) quedan fuera.
-  GCHAT_SINCE           exportar solo mensajes desde esta fecha, p. ej. 2024-01-01   [todo]
+Environment variables (also read from scripts/.env, which is in .gitignore;
+template in scripts/.env.example):
+  Relative paths are resolved from the scripts/ folder.
+  GCHAT_CLIENT_SECRET   path to the JSON of the "Desktop app" OAuth client
+                        [the only client_secret_*.json in scripts/]
+  GCHAT_TOKEN_FILE      path where the session token is saved       [token.json]
+  GCHAT_OUT_DIR         output folder                                [gchat-backup]
+  GCHAT_SPACE_TYPES     types to export, comma-separated             [SPACE,GROUP_CHAT,DIRECT_MESSAGE]
+                        SPACE = named space, GROUP_CHAT = unnamed group,
+                        DIRECT_MESSAGE = 1:1 chat
+  GCHAT_SPACE_FILTER    regular expression on the space name (case-insensitive).
+                        If set, only named spaces that match are included;
+                        groups and 1:1 chats (which have no name) are left out.
+  GCHAT_SINCE           export only messages from this date on, e.g. 2024-01-01   [everything]
   GCHAT_DOWNLOAD_ATTACHMENTS  true/false                             [true]
-  GCHAT_DRY_RUN         true/false: solo listar qué se exportaría    [false]
-  GCHAT_MIN_FREE_GB     espacio libre mínimo en disco, en GB. Por debajo, el backup
-                        se detiene limpio (guarda index y manifest) en vez de
-                        llenar el disco. Relanzar continúa donde se quedó.  [20]
+  GCHAT_DRY_RUN         true/false: only list what would be exported, like --preview  [false]
+  GCHAT_WORKERS         chats exported at a time, from 1 to 16. Speeds things up when there are
+                        many chats; within a chat attachments still go one at a time, so a chat
+                        with thousands of attachments takes just as long. Retries on
+                        "too many requests" are automatic.  [4]
+  GCHAT_MIN_FREE_GB     minimum free disk space, in GB. Below it, the backup
+                        stops cleanly (saving index and manifest) instead of
+                        filling the disk. Running it again resumes where it left off.  [20]
 """
 
+import argparse
+import contextlib
 import io
 import json
 import os
 import re
 import shutil
 import sys
+import threading
 import unicodedata
+import warnings
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
+
+# The macOS system Python (3.9, built against LibreSSL) makes the Google libraries warn on every
+# run that the Python version is past end of life and that urllib3 wants OpenSSL. Neither affects
+# the backup, and both would bury the progress lines, so they are filtered before the imports.
+warnings.filterwarnings("ignore", category=FutureWarning, module=r"google\.")  # every google.* EOL notice
+warnings.filterwarnings("ignore", message=r"urllib3 v2 only supports OpenSSL")
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -63,10 +79,63 @@ from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload
 
 
-# ---------------------------------------------------------------- configuración
+# ---------------------------------------------------------------- terminal output
+# Progress and messages go to stderr; only the preview list goes to stdout, so it can be piped.
+# No timestamps: one line per step and per chat, the verdict last, errors as Error: + Hint:.
+
+_log_lock = threading.Lock()
+
+# A console or redirected file without UTF-8 (Windows, some terminals) must not crash on ✓ or …
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
+
+def say(line=""):
+    with _log_lock:
+        print(line, file=sys.stderr, flush=True)
+
+
+def step(k, m, text):
+    """Numbered step header, `[k/m] Text…`, with a blank line before all but the first."""
+    say(f"{'' if k == 1 else chr(10)}[{k}/{m}] {text}…")
+
+
+def info(text):
+    say(f"  {text}")
+
+
+def verdict(mark, text, hint=None):
+    say(f"\n{mark} {text}")
+    if hint:
+        say(f"Hint: {hint}")
+
+
+def fail(fact, hint=None, code=1):
+    """A failure the user can fix: what happened, then what to do."""
+    say(f"Error: {fact}")
+    if hint:
+        say(f"Hint: {hint}")
+    sys.exit(code)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        prog="backup.py", description="Back up the Google Chat conversations you take part in.")
+    parser.add_argument("--preview", action="store_true",
+                        help="sign in and list the chats that would be backed up; download nothing")
+    return parser.parse_args()
+
+
+ARGS = parse_args()
+
+
+# ---------------------------------------------------------------- configuration
 
 def load_dotenv(path: Path):
-    """Carga KEY=valor de un .env local (gitignored). El entorno real manda sobre el fichero."""
+    """Loads KEY=value from a local .env (gitignored). The real environment wins over the file."""
     if not path.is_file():
         return
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -78,14 +147,15 @@ def load_dotenv(path: Path):
         os.environ.setdefault(key, value.strip().strip("'\""))
 
 
-load_dotenv(Path(__file__).resolve().parent / ".env")
+SCRIPT_DIR = Path(__file__).resolve().parent
+load_dotenv(SCRIPT_DIR / ".env")
 
 
 def env(name, default=None, required=False):
     value = os.environ.get(name, "").strip()
     if not value:
         if required:
-            sys.exit(f"Falta la variable de entorno {name}")
+            fail(f"Missing environment variable {name}", f"Set {name} in scripts/.env")
         return default
     return value
 
@@ -97,20 +167,46 @@ def env_bool(name, default):
     return value.lower() in ("1", "true", "yes", "si", "sí", "on")
 
 
-CLIENT_SECRET = env("GCHAT_CLIENT_SECRET", required=True)
-TOKEN_FILE = Path(env("GCHAT_TOKEN_FILE", "token.json"))
-OUT_DIR = Path(env("GCHAT_OUT_DIR", "./gchat-backup"))
+def local_path(value):
+    """Relative paths are resolved from scripts/, wherever the script is launched from."""
+    path = Path(value).expanduser()
+    return path if path.is_absolute() else SCRIPT_DIR / path
+
+
+def find_client_secret():
+    """GCHAT_CLIENT_SECRET if set; otherwise, the only client_secret_*.json in scripts/."""
+    if env("GCHAT_CLIENT_SECRET"):
+        return local_path(env("GCHAT_CLIENT_SECRET"))
+    found = sorted(SCRIPT_DIR.glob("client_secret_*.json"))
+    if len(found) == 1:
+        return found[0]
+    if not found:
+        fail(f"No client_secret_*.json file in {SCRIPT_DIR}",
+             "Move the client_secret file the maintainer sent you into that folder")
+    fail(f"{len(found)} client_secret_*.json files in {SCRIPT_DIR}",
+         "Keep only one of them, or set GCHAT_CLIENT_SECRET to the one to use")
+
+
+CLIENT_SECRET = find_client_secret()
+TOKEN_FILE = local_path(env("GCHAT_TOKEN_FILE", "token.json"))
+OUT_DIR = local_path(env("GCHAT_OUT_DIR", "gchat-backup"))
 SPACE_TYPES = {t.strip().upper() for t in env(
     "GCHAT_SPACE_TYPES", "SPACE,GROUP_CHAT,DIRECT_MESSAGE").split(",") if t.strip()}
 SPACE_FILTER = env("GCHAT_SPACE_FILTER")
 SPACE_FILTER_RE = re.compile(SPACE_FILTER, re.IGNORECASE) if SPACE_FILTER else None
 SINCE = env("GCHAT_SINCE")
 DOWNLOAD_ATTACHMENTS = env_bool("GCHAT_DOWNLOAD_ATTACHMENTS", True)
-DRY_RUN = env_bool("GCHAT_DRY_RUN", False)
+DRY_RUN = ARGS.preview or env_bool("GCHAT_DRY_RUN", False)
 try:
     MIN_FREE_GB = float(env("GCHAT_MIN_FREE_GB", "20"))
 except ValueError:
-    sys.exit(f"GCHAT_MIN_FREE_GB no es un número: {env('GCHAT_MIN_FREE_GB')!r}")
+    fail(f"GCHAT_MIN_FREE_GB is not a number: {env('GCHAT_MIN_FREE_GB')!r}",
+         "Set GCHAT_MIN_FREE_GB to a number of gigabytes, for example 20")
+_workers_raw = env("GCHAT_WORKERS", "4")
+if not _workers_raw.isdigit() or not 1 <= int(_workers_raw) <= 16:
+    fail(f"GCHAT_WORKERS must be an integer between 1 and 16: {_workers_raw!r}",
+         "Set GCHAT_WORKERS to a value from 1 to 16 in scripts/.env, or remove it to use 4")
+WORKERS = int(_workers_raw)
 
 SCOPES = [
     "openid",
@@ -120,17 +216,19 @@ SCOPES = [
     "https://www.googleapis.com/auth/chat.messages.readonly",
 ]
 
-RETRIES = 5  # reintentos automáticos ante 429 (límite de peticiones) y errores 5xx
+RETRIES = 6  # retries on 429 and 5xx, waiting rand()*2^n: up to 64 s, the ceiling Google recommends
 
 
-# ---------------------------------------------------------------- utilidades
+# ---------------------------------------------------------------- utilities
 
-def log(msg):
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
+# State shared between threads (GCHAT_WORKERS > 1)
+STOP = threading.Event()        # disk brake or Ctrl-C: no thread starts anything new
+_folders_lock = threading.Lock()  # choosing and creating a chat folder is a single operation
+_tls = threading.local()        # one API client per thread: httplib2 is not thread-safe
 
 
 def write_json(path: Path, data):
-    """Escritura atómica: primero a .tmp y luego renombrar."""
+    """Atomic write: first to .tmp and then rename."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -170,28 +268,34 @@ def since_rfc3339(value):
     try:
         dt = datetime.fromisoformat(value)
     except ValueError:
-        sys.exit(f"GCHAT_SINCE no es una fecha válida: {value!r} (usa AAAA-MM-DD)")
+        fail(f"GCHAT_SINCE is not a valid date: {value!r}", "Set GCHAT_SINCE as YYYY-MM-DD, for example 2024-01-01")
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-# ---------------------------------------------------------------- autenticación
+# ---------------------------------------------------------------- authentication
 
 def get_credentials():
     creds = None
     if TOKEN_FILE.exists():
         creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
         if not creds.has_scopes(SCOPES):
-            creds = None  # cambiaron los permisos pedidos: volver a iniciar sesión
+            creds = None  # the requested permissions changed: sign in again
     if creds and creds.expired and creds.refresh_token:
         try:
             creds.refresh(Request())
         except Exception:
             creds = None
     if not creds or not creds.valid:
-        flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET, SCOPES)
-        creds = flow.run_local_server(port=0, prompt="consent")
+        flow = InstalledAppFlow.from_client_secrets_file(str(CLIENT_SECRET), SCOPES)
+        info("Opening your browser to sign in with your work account")
+        # the library prints its own prompt to stdout; keep stdout for the preview list
+        with contextlib.redirect_stdout(sys.stderr):
+            creds = flow.run_local_server(
+                port=0, prompt="consent",
+                authorization_prompt_message="  If the browser does not open, visit: {url}",
+                success_message="Signed in. You can close this tab and go back to the terminal.")
     TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
     TOKEN_FILE.write_text(creds.to_json(), encoding="utf-8")
     try:
@@ -201,17 +305,17 @@ def get_credentials():
     return creds
 
 
-# ---------------------------------------------------------------- exportación
+# ---------------------------------------------------------------- export
 
 def slug(text, max_len=60):
-    """'Server Startup S.L.' -> 'server-startup-s-l' (ASCII, minúsculas, guiones)."""
+    """'Server Startup S.L.' -> 'server-startup-s-l' (ASCII, lowercase, hyphens)."""
     text = unicodedata.normalize("NFKD", text or "").encode("ascii", "ignore").decode()
     text = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
     return text[:max_len].rstrip("-")
 
 
 def other_members(members, exporter_email):
-    """Nombres de los miembros que no son quien exporta, ordenados."""
+    """Names of the members other than the exporter, sorted."""
     names = []
     for m in members:
         u = m.get("member") or {}
@@ -222,12 +326,12 @@ def other_members(members, exporter_email):
 
 
 def chat_label(space, members, exporter_email):
-    """Nombre legible del chat: el del espacio o, si no tiene, el de los otros miembros."""
-    return space.get("displayName") or ", ".join(other_members(members, exporter_email)) or "(sin nombre)"
+    """Readable chat name: the space's or, if it has none, the other members'."""
+    return space.get("displayName") or ", ".join(other_members(members, exporter_email)) or "(unnamed)"
 
 
 def folder_name(space, members, messages, exporter_email):
-    """<AAAA-MM-DD>_<chat>: fecha del primer mensaje y nombre del espacio o de las personas."""
+    """<YYYY-MM-DD>_<chat>: date of the first message and name of the space or of the people."""
     first = (messages[0].get("createTime") if messages else None) or space.get("createTime") or ""
     date = first[:10] if re.match(r"\d{4}-\d{2}-\d{2}", first) else "undated"
     if space.get("displayName"):
@@ -239,7 +343,7 @@ def folder_name(space, members, messages, exporter_email):
 
 
 def existing_folders(user_dir: Path):
-    """space name -> carpeta ya creada en una ejecución anterior (por el id de space.json)."""
+    """space name -> folder already created in a previous run (by the id in space.json)."""
     found = {}
     for f in user_dir.glob("*/space.json"):
         name = read_json(f, {}).get("name")
@@ -261,17 +365,26 @@ class DiskFull(Exception):
     pass
 
 
+class Stopped(Exception):
+    """Another thread triggered the stop (disk brake or Ctrl-C)."""
+
+
 def check_free_space():
-    """Corta antes de llenar el disco: se comprueba antes de cada espacio y cada adjunto."""
+    """Stops before filling the disk: checked before each space and each attachment."""
+    if STOP.is_set():
+        raise Stopped()
     free_gb = shutil.disk_usage(OUT_DIR).free / 1024 ** 3
     if free_gb < MIN_FREE_GB:
-        raise DiskFull(f"quedan {free_gb:.1f} GB libres en {OUT_DIR.resolve()}, "
-                       f"por debajo del mínimo GCHAT_MIN_FREE_GB={MIN_FREE_GB:g}")
+        STOP.set()
+        raise DiskFull(f"{free_gb:.1f} GB free in {OUT_DIR.resolve()}, "
+                       f"below the minimum GCHAT_MIN_FREE_GB={MIN_FREE_GB:g}")
 
 
 def download_attachment(chat, resource_name, dest: Path):
+    # Metadata only (stat): a Dropbox "online-only" file is skipped without downloading it.
+    # An interruption leaves <name>.part, which is not dest, so anything incomplete is downloaded again.
     if dest.exists() and dest.stat().st_size > 0:
-        return "ya existía"
+        return "already present"
     check_free_space()
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(dest.suffix + ".part")
@@ -282,20 +395,27 @@ def download_attachment(chat, resource_name, dest: Path):
         while not done:
             _, done = downloader.next_chunk(num_retries=RETRIES)
     tmp.replace(dest)
-    return "descargado"
+    return "downloaded"
 
 
 def resolve_space_dir(space, members, messages, user_dir: Path, exporter_email, known):
-    if space["name"] in known:
-        return known[space["name"]]
-    target = user_dir / folder_name(space, members, messages, exporter_email)
-    if target.exists():  # la misma carpeta ya la usa otro chat
-        target = target.with_name(f"{target.name}_{short_id(space['name'])}")
-    legacy = user_dir / "spaces" / short_id(space["name"])  # estructura antigua spaces/<id>/
-    if legacy.is_dir():
-        legacy.rename(target)
-    known[space["name"]] = target
-    return target
+    with _folders_lock:
+        if space["name"] in known:
+            return known[space["name"]]
+        target = user_dir / folder_name(space, members, messages, exporter_email)
+        owner = read_json(target / "space.json", {}).get("name") if target.exists() else None
+        if target.exists() and owner and owner != space["name"]:
+            # the folder belongs to another chat with the same date and name
+            target = target.with_name(f"{target.name}_{short_id(space['name'])}")
+        # (if it exists without space.json, it is from an earlier interruption of this same chat: it is reused)
+        legacy = user_dir / "spaces" / short_id(space["name"])  # old layout spaces/<id>/
+        if legacy.is_dir() and not target.exists():
+            legacy.rename(target)
+        target.mkdir(parents=True, exist_ok=True)
+        # space.json from the start: if interrupted halfway, the next run recognises the folder
+        write_json(target / "space.json", space)
+        known[space["name"]] = target
+        return target
 
 
 def export_space(chat, space, user_dir: Path, exporter_email, known):
@@ -312,20 +432,23 @@ def export_space(chat, space, user_dir: Path, exporter_email, known):
     space_dir = resolve_space_dir(space, members, messages, user_dir, exporter_email, known)
     label = chat_label(space, members, exporter_email)
 
-    attachments_ok = attachments_err = drive_links = 0
+    attachments_new = attachments_had = attachments_err = drive_links = 0
     if DOWNLOAD_ATTACHMENTS:
         for msg in messages:
             for i, att in enumerate(msg.get("attachment", []) or []):
                 ref = (att.get("attachmentDataRef") or {}).get("resourceName")
                 if not ref:
                     if att.get("driveDataRef"):
-                        drive_links += 1  # está en Drive: queda el enlace en messages.json
+                        drive_links += 1  # it is in Drive: the link stays in messages.json
                     continue
                 fname = f"{safe_name(short_id(msg['name']))}_{i}_{safe_name(att.get('contentName'))}"
                 try:
-                    download_attachment(chat, ref, space_dir / "attachments" / fname)
+                    result = download_attachment(chat, ref, space_dir / "attachments" / fname)
                     att["_localFile"] = f"attachments/{fname}"
-                    attachments_ok += 1
+                    if result == "downloaded":
+                        attachments_new += 1
+                    else:
+                        attachments_had += 1
                 except HttpError as e:
                     att["_downloadError"] = f"HTTP {e.resp.status}"
                     attachments_err += 1
@@ -334,10 +457,8 @@ def export_space(chat, space, user_dir: Path, exporter_email, known):
     write_json(space_dir / "members.json", members)
     write_json(space_dir / "messages.json", messages)
 
-    log(f"  {label}: {len(messages)} mensajes, {len(members)} miembros, "
-        f"adjuntos {attachments_ok} ok / {attachments_err} error / {drive_links} en Drive")
-
     return {
+        "label": label,
         "id": space_id,
         "folder": space_dir.name,
         "name": space["name"],
@@ -345,7 +466,8 @@ def export_space(chat, space, user_dir: Path, exporter_email, known):
         "spaceType": space.get("spaceType"),
         "messages": len(messages),
         "members": len(members),
-        "attachments": attachments_ok,
+        "attachments": attachments_new + attachments_had,
+        "attachmentsDownloaded": attachments_new,
         "attachmentErrors": attachments_err,
         "driveLinks": drive_links,
         "firstMessage": messages[0].get("createTime") if messages else None,
@@ -353,42 +475,104 @@ def export_space(chat, space, user_dir: Path, exporter_email, known):
     }
 
 
+def chat_detail(entry):
+    """`12,513 messages    687 attachments (12 new)`, plus Drive links and errors when there are any."""
+    text = f"{entry['messages']:>7,} messages  {entry['attachments']:>6,} attachments ({entry['attachmentsDownloaded']:,} new)"
+    if entry["driveLinks"]:
+        text += f" · {entry['driveLinks']:,} in Drive"
+    if entry["attachmentErrors"]:
+        text += f" · {entry['attachmentErrors']:,} errors"
+    return text
+
+
 def main():
+    steps = 2 if DRY_RUN else 3
+    step(1, steps, "Signing in")
     creds = get_credentials()
     exporter = build("oauth2", "v2", credentials=creds, cache_discovery=False) \
         .userinfo().get().execute(num_retries=RETRIES).get("email")
+    info(f"as {exporter}")
     chat = build("chat", "v1", credentials=creds, cache_discovery=False)
     user_dir = OUT_DIR / safe_name(exporter.split("@")[0])
-    log(f"Exportando como {exporter} a {user_dir.resolve()}")
 
+    step(2, steps, "Listing chats")
     all_spaces = list(paginate(chat.spaces().list, "spaces", pageSize=1000))
     spaces = [s for s in all_spaces if wanted(s)]
-    log(f"{len(all_spaces)} espacios visibles, {len(spaces)} seleccionados")
+    info(f"{len(all_spaces):,} chats visible, {len(spaces):,} selected")
 
     if DRY_RUN:
         for s in spaces:
-            print(f"  {s.get('spaceType'):15} {short_id(s['name'])}  {s.get('displayName') or ''}")
-        return
+            print(f"{s.get('spaceType')}\t{short_id(s['name'])}\t{s.get('displayName') or ''}", flush=True)
+        verdict("✓", f"{len(spaces):,} chats would be backed up to {user_dir.resolve()}",
+                "Run the same command without --preview to back them up")
+        return 0
 
     user_dir.mkdir(parents=True, exist_ok=True)
     known = existing_folders(user_dir)
-    index, failed = [], []
-    stopped = None
     started = datetime.now(timezone.utc).isoformat()
+    total = len(spaces)
+    width = len(str(total))
+    finished = [0]  # chats finished so far, for the [k/total] counter (completion order)
 
-    for n, space in enumerate(spaces, 1):
-        log(f"[{n}/{len(spaces)}] {space.get('displayName') or space['name']}")
+    def thread_chat():
+        if not hasattr(_tls, "chat"):
+            _tls.chat = build("chat", "v1", credentials=creds, cache_discovery=False)
+        return _tls.chat
+
+    def chat_line(ok, name, detail):
+        with _log_lock:
+            finished[0] += 1
+            name = name if len(name) <= 30 else name[:29] + "…"
+            print(f"  {'✓' if ok else '✗'} [{finished[0]:>{width}}/{total}] {name:<30}  {detail}",
+                  file=sys.stderr, flush=True)
+
+    def run_one(n, space):
+        """Exports one chat in a thread. Returns (status, n, data) and never raises HttpError."""
+        if STOP.is_set():
+            return "skipped", n, None
         try:
             check_free_space()
-            index.append(export_space(chat, space, user_dir, exporter, known))
+            entry = export_space(thread_chat(), space, user_dir, exporter, known)
+            chat_line(True, entry["label"], chat_detail(entry))
+            return "ok", n, entry
         except DiskFull as e:
-            stopped = str(e)
-            log(f"DETENIDO: {stopped}. Libera espacio y relanza: continúa sin repetir adjuntos.")
-            break
+            return "stopped", n, str(e)
+        except Stopped:
+            return "skipped", n, None
         except HttpError as e:
-            log(f"  ERROR HTTP {e.resp.status}: se salta este espacio")
-            failed.append({"name": space["name"], "displayName": space.get("displayName"),
-                           "error": f"HTTP {e.resp.status}"})
+            chat_line(False, space.get("displayName") or space["name"], f"HTTP {e.resp.status}")
+            return "failed", n, {"name": space["name"], "displayName": space.get("displayName"),
+                                 "error": f"HTTP {e.resp.status}"}
+
+    step(3, steps, f"Backing up {total:,} chats to {user_dir.resolve()} ({WORKERS} at a time)")
+    results, stopped, interrupted = {}, None, False
+    executor = ThreadPoolExecutor(max_workers=WORKERS)
+    try:
+        futures = [executor.submit(run_one, n, s) for n, s in enumerate(spaces, 1)]
+        for fut in as_completed(futures):
+            if fut.cancelled():
+                continue
+            status, n, data = fut.result()
+            results[n] = (status, data)
+            if status == "stopped" and stopped is None:
+                stopped = data
+                executor.shutdown(wait=False, cancel_futures=True)
+    except KeyboardInterrupt:
+        STOP.set()
+        interrupted = True
+        say("\n⚠ Stopping: finishing the attachments in progress…")
+        executor.shutdown(wait=True, cancel_futures=True)
+        for fut in futures:
+            if fut.done() and not fut.cancelled():
+                status, n, data = fut.result()
+                results[n] = (status, data)
+        stopped = "interrupted"
+    executor.shutdown(wait=True)
+
+    index = [results[n][1] for n in sorted(results) if results[n][0] == "ok"]
+    failed = [results[n][1] for n in sorted(results) if results[n][0] == "failed"]
+    for entry in index:
+        entry.pop("label", None)
 
     legacy = user_dir / "spaces"
     if legacy.is_dir() and not any(legacy.iterdir()):
@@ -404,18 +588,37 @@ def main():
             "since": SINCE,
             "downloadAttachments": DOWNLOAD_ATTACHMENTS,
             "minFreeGb": MIN_FREE_GB,
+            "workers": WORKERS,
         },
         "spaces": len(index),
         "messages": sum(s["messages"] for s in index),
         "failed": failed,
         "stoppedEarly": stopped,
     })
-    log(f"Hecho: {len(index)} espacios, {sum(s['messages'] for s in index)} mensajes, "
-        f"{len(failed)} con error")
+
+    messages = sum(e["messages"] for e in index)
+    attachments = sum(e["attachments"] for e in index)
+    new = sum(e["attachmentsDownloaded"] for e in index)
+    totals = f"{messages:,} messages, {attachments:,} attachments ({new:,} new)"
+    again = "Run the same command again: it carries on without downloading anything twice"
+    if interrupted:
+        verdict("⚠", f"Interrupted after {len(index):,} of {total:,} chats: {totals}", again)
+        return 1
+    if stopped:
+        verdict("⚠", f"Stopped after {len(index):,} of {total:,} chats: {stopped}",
+                "Free up disk space, then run the same command again")
+        return 0
+    if failed:
+        verdict("✗", f"Backed up {len(index):,} of {total:,} chats, {len(failed):,} failed: {totals}",
+                "Run the same command again to retry the failed chats")
+        return 1
+    verdict("✓", f"Backed up {total:,} chats: {totals}")
+    return 0
 
 
 if __name__ == "__main__":
     try:
-        main()
+        sys.exit(main())
     except KeyboardInterrupt:
-        sys.exit("\nInterrumpido. Puedes volver a lanzarlo: los adjuntos ya bajados no se repiten.")
+        verdict("⚠", "Interrupted before the backup started", "Run the same command again")
+        sys.exit(1)

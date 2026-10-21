@@ -1,11 +1,11 @@
 variable "project_id" {
   type        = string
-  description = "ID del proyecto GCP donde se habilitan las APIs (p. ej. \"my-project-123\"). Es el PROJECT_ID, no el nombre."
+  description = "ID of the GCP project where the APIs are enabled (e.g. \"my-project-123\"). It is the PROJECT_ID, not the name."
 }
 
 variable "services" {
   type        = list(string)
-  description = "APIs a habilitar. El script ya no usa People API (los mensajes traen nombre y email); sigue en la lista porque está en el state y quitarla la deshabilitaría en el proyecto."
+  description = "APIs to enable. The script no longer uses the People API (messages carry name and email); it stays in the list because it is in the state and removing it would disable it in the project."
   default = [
     "chat.googleapis.com",
     "people.googleapis.com",
@@ -14,34 +14,34 @@ variable "services" {
 
 variable "disable_on_destroy" {
   type        = bool
-  description = "Reversibilidad. Si es true (por defecto), 'terraform destroy' DESHABILITA las APIs y revierte el cambio. Ojo: en un proyecto compartido deshabilitar una API afecta a todo el proyecto."
+  description = "Reversibility. If true (the default), 'terraform destroy' DISABLES the APIs and reverts the change. Careful: in a shared project, disabling an API affects the whole project."
   default     = true
 }
 
-# --- Creación opcional del proyecto (avanzado) -------------------------------
-# Por defecto se usa un proyecto YA existente (create_project = false).
-# Crear el proyecto requiere billing_account y, normalmente, una organización.
+# --- Optional project creation (advanced) -----------------------------------
+# By default an ALREADY existing project is used (create_project = false).
+# Creating the project requires billing_account and, usually, an organization.
 
 variable "create_project" {
   type        = bool
-  description = "Si es true, Terraform crea el proyecto. Si es false, usa uno existente."
+  description = "If true, Terraform creates the project. If false, it uses an existing one."
   default     = false
 }
 
 variable "project_name" {
   type        = string
-  description = "Nombre visible del proyecto si create_project = true."
+  description = "Display name of the project if create_project = true."
   default     = "chatea"
 }
 
 variable "billing_account" {
   type        = string
-  description = "ID de la cuenta de facturación (XXXXXX-XXXXXX-XXXXXX). Solo si create_project = true."
+  description = "Billing account ID (XXXXXX-XXXXXX-XXXXXX). Only if create_project = true."
   default     = ""
 }
 
 variable "org_id" {
   type        = string
-  description = "ID de la organización. Vacío para proyecto sin organización. Solo si create_project = true."
+  description = "Organization ID. Empty for a project without an organization. Only if create_project = true."
   default     = ""
 }

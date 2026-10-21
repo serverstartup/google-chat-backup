@@ -1,13 +1,13 @@
-# Plantilla del quality gate. NO pongas aquí términos reales: este fichero SÍ se sube.
+# Quality gate template. Do NOT put real terms here: this file IS pushed.
 #
-# Cópialo a denylist.txt (que está en .gitignore y NO se sube) y añade allí una
-# expresión regular por línea con lo que nunca debe entrar en un commit:
-#   - el nombre del cliente
-#   - el PROJECT_ID real
-#   - dominios o nombres internos
+# Copy it to denylist.txt (which is in .gitignore and is NOT pushed) and add there one
+# regular expression per line with whatever must never enter a commit:
+#   - the client's name
+#   - the real PROJECT_ID
+#   - internal domains or names
 #
-# El matching no distingue mayúsculas. Las líneas vacías y las que empiezan por # se ignoran.
+# Matching is case-insensitive. Empty lines and lines starting with # are ignored.
 #
-# Ejemplo (esto va en denylist.txt, nunca aquí):
-#   nombre-del-cliente
-#   mi-project-id-real
+# Example (this goes in denylist.txt, never here):
+#   client-name
+#   my-real-project-id
