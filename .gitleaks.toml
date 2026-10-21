@@ -1,0 +1,5 @@
+# Secret gate for this repository: gitleaks' default rules, which cover the shapes this
+# project handles (Google OAuth client secrets, service-account keys, tokens). A false positive
+# is exempted here, with the reason written beside it.
+[extend]
+useDefault = true

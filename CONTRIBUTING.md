@@ -30,6 +30,8 @@ google-chat-backup/
 │   └── resources/env/       template.env, terraform-default.tfvars.json; the real .default.env
 │                            holds the project id and is never committed
 ├── docs/how-to/bootstrap.md Bootstrap phase: Terraform, console steps, access, teardown
+├── .githooks/               pre-commit (client data, credentials) and pre-push (no push to main)
+├── .gitleaks.toml           gitleaks rules for this repository (the defaults) and its exemptions
 ├── specs/                   Spec Kit specifications, one folder per feature
 └── .specify/                Spec Kit constitution and templates
 ```
@@ -41,29 +43,34 @@ google-chat-backup/
 backup output folders. The client secret, the session token and the project id live **only** on
 each person's machine.
 
-A `pre-commit` hook in `.githooks/` **aborts the commit** when the staged files contain
-credentials, Terraform state or any term from a **local denylist**. The denylist (`denylist.txt`)
+Two hooks in `.githooks/` guard the repository. `pre-commit` **aborts the commit** when the staged
+files contain credentials, Terraform state, any term from a **local denylist**, or (with
+[gitleaks](https://github.com/gitleaks/gitleaks) installed) a credential recognised by its shape.
+`pre-push` **refuses any push to `main`**: changes reach it only through a pull request. GitHub
+does not enforce that on this plan, so the hook is the guard. The denylist (`denylist.txt`)
 is **not versioned**: it lives only on your machine, so the forbidden term (a client name, for
 example) never reaches the repository, not even inside the hook. The hook names the file, never
 the term.
 
-Set it up in every clone; it does not activate by itself:
+Set them up in every clone; they do not activate by themselves:
 
 ```bash
-git config core.hooksPath .githooks        # activate the hook
+git config core.hooksPath .githooks        # activate both hooks
 cp denylist.example.txt denylist.txt        # then add your terms (one regex per line)
 ```
 
-The hook sees staged files only. Before a pull request, also check the whole history and the
-commit messages, which it cannot see:
+The hooks see staged files only. Before a pull request, scan every ref of the history for
+credentials, and check the history and the commit messages for denylist terms:
 
 ```bash
+gitleaks git --config .gitleaks.toml --log-opts=--all --redact .
 T=$(grep -vE '^(#|$)' denylist.txt | paste -sd'|' -)
 git grep -i -l -E "$T" $(git rev-list --all); git log --all --format=%B | grep -ciE "$T"
 ```
 
-Expect no file names and `0`. For a one-off legitimate case, skip the hook with
-`git commit --no-verify`.
+Expect `no leaks found`, then no file names and `0`. For a one-off legitimate case, skip a hook with
+`git commit --no-verify` or `git push --no-verify`. A false positive from gitleaks is exempted in
+`.gitleaks.toml`, with the reason written beside it.
 
 ## Change the code
 

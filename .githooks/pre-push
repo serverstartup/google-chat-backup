@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+#
+# Refuses any push that updates or deletes main: changes reach main only through a pull
+# request. GitHub enforces nothing here (branch protection on a private repository needs a
+# paid plan), so this hook is the guard. Tags and every other branch push normally.
+#
+# Skip it once (at your own risk): git push --no-verify
+set -euo pipefail
+
+blocked=0
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in
+    refs/heads/main|refs/heads/master)
+      echo "pre-push: refusing to push to ${remote_ref#refs/heads/}. Push a branch and open a pull request."
+      blocked=1 ;;
+  esac
+done
+exit "$blocked"
