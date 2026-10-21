@@ -96,8 +96,6 @@ and plan again, so the teardown never disables an API they rely on. Why import i
 Three settings have no API and no Terraform support, so they are made by hand, once, in the
 [Google Cloud console](https://console.cloud.google.com/) with the project selected at the top.
 
-### `TL;DR`
-
 1. Configure the Chat app: *APIs & Services* → *Google Chat API* → **Configuration**. Fill in the
    required fields with anything (app name, description, avatar URL if asked), set
    `https://localhost` as the HTTP endpoint URL, and leave every other option unticked.
@@ -130,8 +128,6 @@ Three settings have no API and no Terraform support, so they are made by hand, o
 
 What a teammate needs so they can follow the [README](../../README.md) alone. The OAuth client is one
 for the whole team; who each person is comes from their own sign-in.
-
-### `TL;DR`
 
 1. Add their work email as a test user: *Google Auth Platform* → *Audience* → *Test users*. Skip it
    if the app type is Internal.

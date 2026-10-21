@@ -44,8 +44,6 @@ on Windows, `py --version`). The commands below use `python3`; on Windows type `
 
 ## 1. Get the code
 
-### `TL;DR`
-
 1. Clone the repository; it is public, so no GitHub account is needed. Without Git, use
    **Code → Download ZIP** on the repository page and unzip it as `google-chat-backup`.
    ```bash
@@ -159,8 +157,6 @@ scripts/gchat-backup/<your-user>/
 ---
 
 ## 4. Hand over the backup
-
-### `TL;DR`
 
 1. Hand over the `scripts/gchat-backup/<your-user>/` folder to the maintainer, however you agree
    (a shared Dropbox folder, for example). It holds private conversations: never put it anywhere
