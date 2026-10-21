@@ -23,8 +23,13 @@ google-chat-backup/
 ├── scripts/
 │   ├── gchat_backup.py   The exporter; each person runs it with their own account
 │   ├── requirements.txt  Its two Google dependencies
-│   └── .env.example      Optional settings template (the real .env is never committed)
+│   ├── .env.example      Optional settings template (the real .env is never committed)
+│   ├── infra-plan.py     Plans terraform/, classifies the plan and prints the apply command
+│   └── tf-env.py/.sh/.ps1  Terraform environment wrapper (project id from resources/env/.<env>.env)
 ├── terraform/            Enables the APIs in the GCP project (the only part with an API)
+│   ├── imports.tf        Adopts APIs that are already enabled (off unless planned with --import)
+│   └── resources/env/    tf-env settings: terraform-default.tfvars.json, template.env
+│                         (the real .default.env holds the project id and is never committed)
 ├── docs/
 │   ├── MANUAL_STEPS.md   What has no API and is done by hand, once
 │   └── REVERT.md         How to leave everything as it was
@@ -45,23 +50,24 @@ Google exposes an API for only part of the setup:
 | **Desktop** OAuth client | No API, no `gcloud` | [`docs/MANUAL_STEPS.md`](docs/MANUAL_STEPS.md) |
 | Chat app "Configuration" tab | No API | [`docs/MANUAL_STEPS.md`](docs/MANUAL_STEPS.md) |
 
-1. **APIs, with Terraform:**
+1. **APIs, with Terraform.** The state is local (`terraform/terraform.tfstate`, never committed).
+   Terraform always runs through `scripts/tf-env.py`, which takes the project id from
+   `terraform/resources/env/.default.env`; nothing that names the project is in the repository.
    ```bash
-   cd terraform
-   cp terraform.tfvars.example terraform.tfvars   # set project_id
-   terraform init
-   terraform apply
+   cp terraform/resources/env/template.env terraform/resources/env/.default.env   # set TF_VAR_project_id
+   python3 scripts/infra-plan.py
    ```
+   `infra-plan.py` runs `terraform init` and `terraform plan`, saves the plan outside the
+   repository, prints what it imports, creates, changes and deletes (with the attributes of each
+   change), refuses if it deletes or replaces anything, and prints the three commands that apply
+   exactly that plan. Run them, then delete the plan file.
 
-   If the APIs **were already enabled** (by hand or with `gcloud`), import them instead of
-   disabling them; the plan then comes out clean:
-   ```bash
-   terraform import 'google_project_service.apis["chat.googleapis.com"]'   "<project_id>/chat.googleapis.com"
-   terraform import 'google_project_service.apis["people.googleapis.com"]' "<project_id>/people.googleapis.com"
-   terraform apply    # only records disable_on_destroy in the state; no call to GCP
-   ```
-   Before keeping `disable_on_destroy = true`, check the Service Usage audit log to confirm you
-   enabled them: if they were already in use, set it to `false`.
+   If the APIs **are already enabled** (by hand, with `gcloud`, or the state was lost), adopt them
+   instead of creating them: `python3 scripts/infra-plan.py --import`. Expect `2 to import`, and
+   `disable_on_destroy` as the only update: it lives only in the state, so the apply makes no call
+   to GCP. Before keeping `disable_on_destroy = true` (in `terraform-default.tfvars.json`), check
+   the Service Usage audit log to confirm you enabled them: if they were already in use, set it to
+   `false`.
 
 2. **Manual steps:** follow [`docs/MANUAL_STEPS.md`](docs/MANUAL_STEPS.md) for the consent screen,
    the desktop OAuth client and the Chat app configuration. Download the `client_secret_*.json`
@@ -92,8 +98,8 @@ hand because it has no API.
 
 ## Keep client data out of the repository
 
-`.gitignore` blocks `client_secret*.json`, `token.json`, `.env`, `*.tfvars` (except the
-`.example`), the Terraform state and the backup output folders. The client secret and the session
+`.gitignore` blocks `client_secret*.json`, `token.json`, `.env`, `terraform/resources/env/.*.env`,
+`*.tfvars`, saved plans, the Terraform state and the backup output folders. The client secret and the session
 token live **only** on each person's machine.
 
 A `pre-commit` hook in `.githooks/` **aborts the commit** when the staged files contain

@@ -9,8 +9,12 @@ one of them has an API.
 
 ```bash
 cd terraform
-terraform destroy
+. ../scripts/tf-env.sh -e default       # Windows: .\..\scripts\tf-env.ps1 -e default
+terraform plan -destroy -out=destroy.tfplan
+terraform apply destroy.tfplan && rm destroy.tfplan
 ```
+
+Read the plan first: it must list only the two `google_project_service` resources.
 
 With `disable_on_destroy = true` (the default), this **disables** `chat.googleapis.com` and
 `people.googleapis.com` in the project.
@@ -20,7 +24,8 @@ With `disable_on_destroy = true` (the default), this **disables** `chat.googleap
 > another workload, but confirm it before destroying.
 >
 > If you would rather **not touch the APIs** and revert only your own changes, set
-> `disable_on_destroy = false` in `terraform.tfvars`, and the revert is just the manual part below.
+> `"disable_on_destroy": false` in `terraform/resources/env/terraform-default.tfvars.json`, apply,
+> and the revert is just the manual part below.
 
 ## 2. What has no API — manual
 
