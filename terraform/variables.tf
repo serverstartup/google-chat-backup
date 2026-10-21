@@ -5,7 +5,7 @@ variable "project_id" {
 
 variable "services" {
   type        = list(string)
-  description = "APIs a habilitar. People API solo hace falta si quieres resolver nombres de autores."
+  description = "APIs a habilitar. El script ya no usa People API (los mensajes traen nombre y email); sigue en la lista porque está en el state y quitarla la deshabilitaría en el proyecto."
   default = [
     "chat.googleapis.com",
     "people.googleapis.com",

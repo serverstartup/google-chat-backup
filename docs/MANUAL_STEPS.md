@@ -33,8 +33,8 @@ Guarda. Sin este paso, la API devuelve error aunque esté habilitada.
   https://www.googleapis.com/auth/chat.messages.readonly
   https://www.googleapis.com/auth/chat.memberships.readonly
   ```
-  (La People API usa `.../auth/directory.readonly`, que el script pide aparte solo si
-  `GCHAT_RESOLVE_NAMES=true`.)
+  No hace falta ningún scope de directorio: los mensajes ya traen el nombre y el email
+  de cada autor.
 
 ## 3. Cliente OAuth de escritorio
 

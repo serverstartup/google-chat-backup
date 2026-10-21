@@ -6,18 +6,22 @@ Usa autenticación de USUARIO (OAuth, "iniciar sesión con Google"): solo ve y
 exporta los espacios, grupos y chats privados en los que esa persona es miembro.
 No necesita permisos de administrador.
 
-Qué guarda (en GCHAT_OUT_DIR):
+Qué guarda (en GCHAT_OUT_DIR/<usuario>/, donde <usuario> es la parte local del email):
   manifest.json                  quién exportó, cuándo, con qué parámetros y resumen
-  index.json                     lista de espacios exportados (id, nombre, tipo, nº mensajes)
-  people.json                    caché  users/<id> -> nombre y email (si se pudo resolver)
-  spaces/<space_id>/space.json      datos del espacio tal como los da la API
-  spaces/<space_id>/members.json    miembros
-  spaces/<space_id>/messages.json   mensajes en orden cronológico (JSON original de la API)
-  spaces/<space_id>/attachments/    adjuntos subidos al chat (los de Drive quedan como enlace)
+  index.json                     lista de chats exportados (id, carpeta, nombre, tipo, nº mensajes)
+  <AAAA-MM-DD>_<chat>/           una carpeta por chat: fecha del primer mensaje + nombre
+    space.json                   datos del chat tal como los da la API
+    members.json                 miembros (con nombre y email)
+    messages.json                mensajes en orden cronológico, JSON original de la API
+                                 (autor con nombre y email; los hilos van en el campo thread)
+    attachments/                 adjuntos subidos al chat (los de Drive quedan como enlace)
+
+  <chat> es el nombre del espacio; en un chat 1 a 1, el de la otra persona; en un grupo
+  sin nombre, el de sus miembros. Si dos chats dan la misma carpeta, se añade el id.
 
 Se puede ejecutar varias veces: reescribe los mensajes y no vuelve a bajar
-adjuntos que ya existen. La carpeta usa el id del espacio, así que las copias
-de varias personas se pueden unir después sin conflictos de nombres.
+adjuntos que ya existen. Cada chat conserva su carpeta aunque luego cambie de nombre
+(se reconoce por el id guardado en space.json).
 
 Dependencias:
   pip install google-api-python-client google-auth-oauthlib
@@ -35,9 +39,6 @@ plantilla en scripts/.env.example):
                         coincidan; los grupos y chats 1 a 1 (que no tienen nombre) quedan fuera.
   GCHAT_SINCE           exportar solo mensajes desde esta fecha, p. ej. 2024-01-01   [todo]
   GCHAT_DOWNLOAD_ATTACHMENTS  true/false                             [true]
-  GCHAT_RESOLVE_NAMES   true/false: traducir users/<id> a nombre y email con la
-                        People API (directorio). Si la organización no lo permite,
-                        se sigue sin nombres.                        [true]
   GCHAT_DRY_RUN         true/false: solo listar qué se exportaría    [false]
   GCHAT_MIN_FREE_GB     espacio libre mínimo en disco, en GB. Por debajo, el backup
                         se detiene limpio (guarda index y manifest) en vez de
@@ -50,6 +51,7 @@ import os
 import re
 import shutil
 import sys
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -104,7 +106,6 @@ SPACE_FILTER = env("GCHAT_SPACE_FILTER")
 SPACE_FILTER_RE = re.compile(SPACE_FILTER, re.IGNORECASE) if SPACE_FILTER else None
 SINCE = env("GCHAT_SINCE")
 DOWNLOAD_ATTACHMENTS = env_bool("GCHAT_DOWNLOAD_ATTACHMENTS", True)
-RESOLVE_NAMES = env_bool("GCHAT_RESOLVE_NAMES", True)
 DRY_RUN = env_bool("GCHAT_DRY_RUN", False)
 try:
     MIN_FREE_GB = float(env("GCHAT_MIN_FREE_GB", "20"))
@@ -118,8 +119,6 @@ SCOPES = [
     "https://www.googleapis.com/auth/chat.memberships.readonly",
     "https://www.googleapis.com/auth/chat.messages.readonly",
 ]
-if RESOLVE_NAMES:
-    SCOPES.append("https://www.googleapis.com/auth/directory.readonly")
 
 RETRIES = 5  # reintentos automáticos ante 429 (límite de peticiones) y errores 5xx
 
@@ -202,46 +201,52 @@ def get_credentials():
     return creds
 
 
-# ---------------------------------------------------------------- nombres de personas
-
-class PeopleResolver:
-    """Traduce 'users/<id>' a nombre y email usando el directorio de la organización."""
-
-    def __init__(self, creds, cache_path: Path):
-        self.cache_path = cache_path
-        self.cache = read_json(cache_path, {})
-        self.enabled = RESOLVE_NAMES
-        self.api = build("people", "v1", credentials=creds, cache_discovery=False) if self.enabled else None
-
-    def resolve(self, user_name):
-        if not self.enabled or not user_name or not user_name.startswith("users/"):
-            return
-        if user_name in self.cache:
-            return
-        person_id = short_id(user_name)
-        try:
-            p = self.api.people().get(
-                resourceName=f"people/{person_id}",
-                personFields="names,emailAddresses",
-                sources=["READ_SOURCE_TYPE_DIRECTORY", "READ_SOURCE_TYPE_PROFILE"],
-            ).execute(num_retries=RETRIES)
-            names = p.get("names") or [{}]
-            emails = p.get("emailAddresses") or [{}]
-            self.cache[user_name] = {
-                "displayName": names[0].get("displayName"),
-                "email": emails[0].get("value"),
-            }
-        except HttpError as e:
-            if e.resp.status in (401, 403):
-                log("Aviso: la organización no permite leer el directorio; se sigue sin nombres.")
-                self.enabled = False
-            self.cache[user_name] = {"displayName": None, "email": None}
-
-    def save(self):
-        write_json(self.cache_path, self.cache)
-
-
 # ---------------------------------------------------------------- exportación
+
+def slug(text, max_len=60):
+    """'Server Startup S.L.' -> 'server-startup-s-l' (ASCII, minúsculas, guiones)."""
+    text = unicodedata.normalize("NFKD", text or "").encode("ascii", "ignore").decode()
+    text = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    return text[:max_len].rstrip("-")
+
+
+def other_members(members, exporter_email):
+    """Nombres de los miembros que no son quien exporta, ordenados."""
+    names = []
+    for m in members:
+        u = m.get("member") or {}
+        if (u.get("email") or "").lower() == exporter_email.lower():
+            continue
+        names.append(u.get("displayName") or u.get("email") or "")
+    return sorted(n for n in names if n)
+
+
+def chat_label(space, members, exporter_email):
+    """Nombre legible del chat: el del espacio o, si no tiene, el de los otros miembros."""
+    return space.get("displayName") or ", ".join(other_members(members, exporter_email)) or "(sin nombre)"
+
+
+def folder_name(space, members, messages, exporter_email):
+    """<AAAA-MM-DD>_<chat>: fecha del primer mensaje y nombre del espacio o de las personas."""
+    first = (messages[0].get("createTime") if messages else None) or space.get("createTime") or ""
+    date = first[:10] if re.match(r"\d{4}-\d{2}-\d{2}", first) else "undated"
+    if space.get("displayName"):
+        name = slug(space["displayName"])
+    else:
+        people = other_members(members, exporter_email)
+        name = "_".join(slug(n, 30) for n in people[:4]) + ("_and-more" if len(people) > 4 else "")
+    return f"{date}_{name or 'unnamed'}"
+
+
+def existing_folders(user_dir: Path):
+    """space name -> carpeta ya creada en una ejecución anterior (por el id de space.json)."""
+    found = {}
+    for f in user_dir.glob("*/space.json"):
+        name = read_json(f, {}).get("name")
+        if name:
+            found[name] = f.parent
+    return found
+
 
 def wanted(space):
     if space.get("spaceType") not in SPACE_TYPES:
@@ -280,10 +285,21 @@ def download_attachment(chat, resource_name, dest: Path):
     return "descargado"
 
 
-def export_space(chat, space, people: PeopleResolver):
+def resolve_space_dir(space, members, messages, user_dir: Path, exporter_email, known):
+    if space["name"] in known:
+        return known[space["name"]]
+    target = user_dir / folder_name(space, members, messages, exporter_email)
+    if target.exists():  # la misma carpeta ya la usa otro chat
+        target = target.with_name(f"{target.name}_{short_id(space['name'])}")
+    legacy = user_dir / "spaces" / short_id(space["name"])  # estructura antigua spaces/<id>/
+    if legacy.is_dir():
+        legacy.rename(target)
+    known[space["name"]] = target
+    return target
+
+
+def export_space(chat, space, user_dir: Path, exporter_email, known):
     space_id = short_id(space["name"])
-    space_dir = OUT_DIR / "spaces" / space_id
-    label = space.get("displayName") or f"({space.get('spaceType')})"
 
     members = list(paginate(chat.spaces().members().list, "memberships",
                             parent=space["name"], pageSize=1000))
@@ -293,10 +309,8 @@ def export_space(chat, space, people: PeopleResolver):
         msg_kwargs["filter"] = f'createTime > "{since_rfc3339(SINCE)}"'
     messages = list(paginate(chat.spaces().messages().list, "messages", **msg_kwargs))
 
-    for m in members:
-        people.resolve((m.get("member") or {}).get("name"))
-    for msg in messages:
-        people.resolve((msg.get("sender") or {}).get("name"))
+    space_dir = resolve_space_dir(space, members, messages, user_dir, exporter_email, known)
+    label = chat_label(space, members, exporter_email)
 
     attachments_ok = attachments_err = drive_links = 0
     if DOWNLOAD_ATTACHMENTS:
@@ -325,6 +339,7 @@ def export_space(chat, space, people: PeopleResolver):
 
     return {
         "id": space_id,
+        "folder": space_dir.name,
         "name": space["name"],
         "displayName": space.get("displayName"),
         "spaceType": space.get("spaceType"),
@@ -343,7 +358,8 @@ def main():
     exporter = build("oauth2", "v2", credentials=creds, cache_discovery=False) \
         .userinfo().get().execute(num_retries=RETRIES).get("email")
     chat = build("chat", "v1", credentials=creds, cache_discovery=False)
-    log(f"Exportando como {exporter} a {OUT_DIR.resolve()}")
+    user_dir = OUT_DIR / safe_name(exporter.split("@")[0])
+    log(f"Exportando como {exporter} a {user_dir.resolve()}")
 
     all_spaces = list(paginate(chat.spaces().list, "spaces", pageSize=1000))
     spaces = [s for s in all_spaces if wanted(s)]
@@ -354,8 +370,8 @@ def main():
             print(f"  {s.get('spaceType'):15} {short_id(s['name'])}  {s.get('displayName') or ''}")
         return
 
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    people = PeopleResolver(creds, OUT_DIR / "people.json")
+    user_dir.mkdir(parents=True, exist_ok=True)
+    known = existing_folders(user_dir)
     index, failed = [], []
     stopped = None
     started = datetime.now(timezone.utc).isoformat()
@@ -364,7 +380,7 @@ def main():
         log(f"[{n}/{len(spaces)}] {space.get('displayName') or space['name']}")
         try:
             check_free_space()
-            index.append(export_space(chat, space, people))
+            index.append(export_space(chat, space, user_dir, exporter, known))
         except DiskFull as e:
             stopped = str(e)
             log(f"DETENIDO: {stopped}. Libera espacio y relanza: continúa sin repetir adjuntos.")
@@ -373,10 +389,12 @@ def main():
             log(f"  ERROR HTTP {e.resp.status}: se salta este espacio")
             failed.append({"name": space["name"], "displayName": space.get("displayName"),
                            "error": f"HTTP {e.resp.status}"})
-        people.save()
 
-    write_json(OUT_DIR / "index.json", index)
-    write_json(OUT_DIR / "manifest.json", {
+    legacy = user_dir / "spaces"
+    if legacy.is_dir() and not any(legacy.iterdir()):
+        legacy.rmdir()
+    write_json(user_dir / "index.json", index)
+    write_json(user_dir / "manifest.json", {
         "exportedBy": exporter,
         "startedAt": started,
         "finishedAt": datetime.now(timezone.utc).isoformat(),
@@ -385,7 +403,6 @@ def main():
             "spaceFilter": SPACE_FILTER,
             "since": SINCE,
             "downloadAttachments": DOWNLOAD_ATTACHMENTS,
-            "resolveNames": RESOLVE_NAMES,
             "minFreeGb": MIN_FREE_GB,
         },
         "spaces": len(index),

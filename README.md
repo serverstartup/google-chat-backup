@@ -79,6 +79,17 @@ cp .env.example .env           # rellena la ruta del client_secret y tu carpeta 
 GCHAT_DRY_RUN=false .venv/bin/python gchat_backup.py   # exportación real
 ```
 
+Queda así en disco, una carpeta por chat (los hilos van dentro de `messages.json`):
+
+```
+scripts/gchat-backup/<usuario>/
+  index.json  manifest.json
+  2021-03-04_nombre-del-espacio/       fecha del primer mensaje + nombre del chat
+    space.json  members.json  messages.json
+    attachments/
+  2023-06-12_nombre-de-la-persona/     chat 1 a 1
+```
+
 `scripts/.env` está en `.gitignore`: ahí van las rutas y los filtros (que pueden llevar
 nombres de espacios). Las variables del entorno real mandan sobre las del fichero.
 
@@ -95,7 +106,7 @@ hagan su propio backup:
 2. Pásales el `client_secret_*.json` **fuera del repo** (por un canal seguro, no por el
    git). Cada uno lo deja en su `scripts/`.
 3. Cada uno ejecuta el script con su cuenta. Genera su propio `token.json` y su carpeta
-   `backup-<usuario>/`. Luego se juntan las tres.
+   `gchat-backup/<usuario>/`. Luego se juntan las tres.
 
 ## Revertir todo
 
