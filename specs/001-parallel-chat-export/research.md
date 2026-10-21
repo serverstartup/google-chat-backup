@@ -1,87 +1,89 @@
-# Research: exportación en paralelo y Dropbox "solo en línea"
+# Research: parallel export and Dropbox "online-only"
 
-## 1. Unidad de paralelismo: el chat
+## 1. Unit of parallelism: the chat
 
-- **Decision**: un hilo exporta un chat entero (miembros, mensajes, adjuntos); N hilos a la vez.
-- **Rationale**: la cuota por espacio (15 lecturas/s, compartida entre apps) se respeta sola
-  porque dentro de un chat las peticiones siguen siendo secuenciales; la que se reparte entre
-  hilos es la del proyecto (3000/min por tipo = 50/s), lejos de lo que alcanzan unos pocos
-  hilos secuenciales. Además cada chat sigue escribiendo solo en su carpeta.
-- **Alternatives considered**: paralelizar adjuntos dentro de un chat (aceleraría los chats
-  grandes, pero concentra peticiones en un espacio y choca con las 15/s); procesos en vez de
-  hilos (el trabajo es de red, no de CPU; los procesos complican compartir el estado).
+- **Decision**: one thread exports a whole chat (members, messages, attachments); N threads at
+  once.
+- **Rationale**: the per-space quota (15 reads/s, shared between apps) is respected on its own
+  because within a chat the requests remain sequential; the one shared between threads is the
+  project's (3000/min per type = 50/s), far from what a few sequential threads reach. Also, each
+  chat still writes only to its own folder.
+- **Alternatives considered**: parallelising attachments within a chat (would speed up large
+  chats, but concentrates requests on one space and collides with the 15/s); processes instead
+  of threads (the work is network-bound, not CPU-bound; processes complicate sharing state).
 
-## 2. Cliente de la API por hilo
+## 2. One API client per thread
 
-- **Decision**: cada hilo construye su propio `build("chat", "v1", credentials=creds)`;
-  las credenciales se comparten.
-- **Rationale**: `httplib2`, el transporte de `googleapiclient`, no es seguro entre hilos; un
-  cliente por hilo es lo que recomienda la propia librería. `google_auth_httplib2` refresca el
-  token por petición cuando caduca; un refresco simultáneo en dos hilos es inocuo.
-- **Alternatives considered**: un cliente compartido con candado (serializaría las peticiones y
-  anularía el paralelismo).
+- **Decision**: each thread builds its own `build("chat", "v1", credentials=creds)`; the
+  credentials are shared.
+- **Rationale**: `httplib2`, the transport of `googleapiclient`, is not thread-safe; one client
+  per thread is what the library itself recommends. `google_auth_httplib2` refreshes the token
+  per request when it expires; a simultaneous refresh in two threads is harmless.
+- **Alternatives considered**: one shared client with a lock (would serialise the requests and
+  cancel out the parallelism).
 
-## 3. Reintentos ante 429 y 5xx
+## 3. Retries on 429 and 5xx
 
-- **Decision**: seguir usando `execute(num_retries=RETRIES)` y `next_chunk(num_retries=...)`,
-  con `RETRIES = 6`.
-- **Rationale**: verificado en el código instalado (`googleapiclient/http.py`,
-  `_should_retry_response` y `_retry_request`): reintenta 5xx, 429 y 403 de tipo
-  `rateLimitExceeded`, esperando `rand() * 2**n`. Con 6 reintentos la espera máxima llega a 64 s,
-  el techo que recomienda Google en su página de límites.
-- **Alternatives considered**: un limitador de peticiones propio (más código para un límite que
-  no se alcanza con N ≤ 16).
+- **Decision**: keep using `execute(num_retries=RETRIES)` and `next_chunk(num_retries=...)`,
+  with `RETRIES = 6`.
+- **Rationale**: verified in the installed code (`googleapiclient/http.py`,
+  `_should_retry_response` and `_retry_request`): it retries 5xx, 429 and 403 of type
+  `rateLimitExceeded`, waiting `rand() * 2**n`. With 6 retries the maximum wait reaches 64 s,
+  the ceiling Google recommends on its limits page.
+- **Alternatives considered**: a custom request limiter (more code for a limit that is not
+  reached with N ≤ 16).
 
-## 4. Valor de `GCHAT_WORKERS`
+## 4. Value of `GCHAT_WORKERS`
 
-- **Decision**: entero, por defecto 1, rango 1–16; recomendado 4 en la documentación.
-- **Rationale**: 1 conserva el comportamiento actual (constitución V). El techo de 16 evita que
-  un error tipográfico (`40`) dispare cientos de peticiones por segundo.
-- **Alternatives considered**: sin techo (riesgo de bloqueo de la cuenta); detectar el número de
-  CPUs (irrelevante: el cuello de botella es la red y la cuota).
+- **Decision**: integer, default 1, range 1–16; 4 recommended in the documentation.
+- **Rationale**: 1 keeps the current behaviour (constitution V). The ceiling of 16 prevents a
+  typo (`40`) from firing hundreds of requests per second.
+- **Alternatives considered**: no ceiling (risk of the account being blocked); detecting the
+  number of CPUs (irrelevant: the bottleneck is the network and the quota).
 
-## 5. Parada común: freno de disco y Ctrl-C
+## 5. Common stop: disk brake and Ctrl-C
 
-- **Decision**: un `threading.Event` de parada. `check_free_space()` lo activa al saltar el
-  freno; Ctrl-C en el hilo principal también. Cada hilo lo consulta antes de empezar un chat y
-  antes de cada adjunto, y sale con una excepción propia. El ejecutor se cierra con
-  `cancel_futures=True` (Python 3.9+) para no empezar chats pendientes.
-- **Rationale**: en Python solo el hilo principal recibe `KeyboardInterrupt`; sin una señal
-  común los hilos seguirían descargando tras Ctrl-C o tras el freno.
-- **Alternatives considered**: hilos demonio que se matan al salir (dejaría `.part` a medias,
-  aceptable, pero también JSON sin escribir y sin índice).
+- **Decision**: a stop `threading.Event`. `check_free_space()` sets it when the brake trips;
+  Ctrl-C in the main thread does too. Each thread checks it before starting a chat and before
+  each attachment, and exits with its own exception. The executor is shut down with
+  `cancel_futures=True` (Python 3.9+) so as not to start pending chats.
+- **Rationale**: in Python only the main thread receives `KeyboardInterrupt`; without a common
+  signal the threads would keep downloading after Ctrl-C or after the brake.
+- **Alternatives considered**: daemon threads killed on exit (would leave half-written `.part`
+  files, acceptable, but also unwritten JSON and no index).
 
-## 6. Carpetas con el mismo nombre en paralelo
+## 6. Folders with the same name in parallel
 
-- **Decision**: la resolución del nombre de carpeta y su creación (`mkdir`) ocurren dentro de un
-  candado; el mapa id → carpeta compartido se actualiza ahí.
-- **Rationale**: la comprobación "ya existe esta carpeta" y su creación tienen que ser atómicas,
-  o dos hilos con chats homónimos elegirían la misma.
+- **Decision**: resolving the folder name and creating it (`mkdir`) happen inside a lock; the
+  shared id → folder map is updated there.
+- **Rationale**: the "this folder already exists" check and its creation have to be atomic, or
+  two threads with same-named chats would pick the same one.
 
-## 7. Dropbox "solo en línea"
+## 7. Dropbox "online-only"
 
-- **Decision**: no automatizar el paso a "solo en línea"; documentar el gesto del Finder.
-  Mantener la comprobación de existencia de adjuntos en `exists()` + `stat().st_size`.
-- **Rationale**: en macOS 15.6, `fileproviderctl help` no ofrece `evict` (medido 2026-10-21),
-  y Dropbox no tiene orden de terminal para ello (sus foros y su ayuda solo describen el menú del
-  Finder). Consultar metadatos de un fichero sin contenido local no lo descarga; leerlo sí. El
-  script nunca lee un adjunto existente.
-- **Pendiente de verificar**: hoy no hay ningún fichero "solo en línea" en el Dropbox de Julio
-  (0 de 59.893 con la marca `dataless`, medido 2026-10-21), así que la comprobación con un fichero
-  real queda en el quickstart.
-- **Trade-off aceptado**: al relanzar, el script lee `space.json` de cada carpeta para reconocer
-  chats ya exportados y reescribe `messages.json`; esos JSON pequeños vuelven a tener contenido
-  local. Los adjuntos, que son el 98 % del tamaño, no.
+- **Decision**: do not automate switching to "online-only"; document the Finder gesture. Keep
+  the attachment existence check on `exists()` + `stat().st_size`.
+- **Rationale**: on macOS 15.6, `fileproviderctl help` does not offer `evict` (measured
+  2026-10-21), and Dropbox has no terminal command for it (its forums and its help only describe
+  the Finder menu). Querying the metadata of a file without local content does not download it;
+  reading it does. The script never reads an existing attachment.
+- **Pending verification**: today there is no "online-only" file in Julio's Dropbox (0 of 59,893
+  with the `dataless` flag, measured 2026-10-21), so the check with a real file stays in the
+  quickstart.
+- **Accepted trade-off**: on relaunch, the script reads each folder's `space.json` to recognise
+  chats already exported and rewrites `messages.json`; those small JSON files get local content
+  again. The attachments, which are 98% of the size, do not.
 
-## 8. Medición (2026-10-21)
+## 8. Measurement (2026-10-21)
 
-- 20 espacios sin adjuntos: 59 s con 1 hilo, 19 s con 4 (×3,1), 0 reintentos.
-- 4 espacios con adjuntos, uno dominante (18 adjuntos): 44 s con 1 hilo, 85 s con 4. El tiempo
-  lo fija el chat más lento y su latencia de descarga varía entre pasadas; no hubo reintentos.
-  El paralelismo no acelera un chat grande por dentro; paralelizar adjuntos dentro de un chat
-  queda fuera de esta funcionalidad (choca con las 15 lecturas/s por espacio si se abusa).
+- 20 spaces without attachments: 59 s with 1 thread, 19 s with 4 (×3.1), 0 retries.
+- 4 spaces with attachments, one dominant (18 attachments): 44 s with 1 thread, 85 s with 4. The
+  time is set by the slowest chat and its download latency varies between passes; there were no
+  retries. Parallelism does not speed up a large chat internally; parallelising attachments
+  within a chat stays outside this feature (it collides with the 15 reads/s per space if
+  overused).
 
-## 9. Progreso legible con varios hilos
+## 9. Readable progress with several threads
 
-- **Decision**: `log()` bajo candado; cada línea lleva el contador global `[n/total]` y el
-  nombre del chat al empezar y al terminar.
+- **Decision**: `log()` under a lock; each line carries the global counter `[n/total]` and the
+  chat name when starting and when finishing.

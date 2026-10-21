@@ -1,38 +1,38 @@
 # Data Model
 
-Sin cambios en el formato de salida. Se documenta el estado que el paralelismo comparte.
+No changes to the output format. This documents the state that parallelism shares.
 
-## Chat (en exportación)
+## Chat (being exported)
 
-| Campo | Origen | Notas |
+| Field | Source | Notes |
 | :--- | :--- | :--- |
-| `name` (`spaces/<id>`) | API | identidad estable |
-| carpeta | `folder_name()` | `<AAAA-MM-DD>_<chat>`, sufijo `_<id>` si choca |
-| estado | — | pendiente → en curso → hecho \| fallido (HTTP) \| detenido |
+| `name` (`spaces/<id>`) | API | stable identity |
+| folder | `folder_name()` | `<YYYY-MM-DD>_<chat>`, suffix `_<id>` on a clash |
+| state | — | pending → in progress → done \| failed (HTTP) \| stopped |
 
-Transiciones: un chat pendiente no empieza si la parada está activa; uno en curso pasa a
-detenido en el siguiente adjunto tras activarse la parada; los fallidos se registran en
+Transitions: a pending chat does not start if the stop is active; one in progress becomes
+stopped at the next attachment after the stop is set; failed ones are recorded in
 `manifest.json` → `failed`.
 
-## Adjunto
+## Attachment
 
-| Estado en disco | Cómo se reconoce (solo metadatos) | Acción al relanzar |
+| State on disk | How it is recognised (metadata only) | Action on relaunch |
 | :--- | :--- | :--- |
-| completo | existe y tamaño > 0 | se salta |
-| "solo en línea" | existe y tamaño lógico > 0, sin contenido local | se salta, no se lee |
-| a medias | solo existe `<nombre>.part` | se descarga entero |
-| ausente | no existe | se descarga |
+| complete | exists and size > 0 | skipped |
+| "online-only" | exists and logical size > 0, no local content | skipped, not read |
+| half-written | only `<name>.part` exists | downloaded in full |
+| absent | does not exist | downloaded |
 
-## Estado compartido entre hilos
+## State shared between threads
 
-| Estado | Protección |
+| State | Protection |
 | :--- | :--- |
-| mapa id → carpeta (`known`) | candado de carpetas |
-| creación de carpeta nueva | mismo candado (comprobar y crear juntos) |
-| señal de parada | `threading.Event` |
-| salida por pantalla | candado de log |
-| índice y fallos | los devuelve cada hilo; el principal los junta en orden |
+| id → folder map (`known`) | folders lock |
+| creation of a new folder | same lock (check and create together) |
+| stop signal | `threading.Event` |
+| on-screen output | log lock |
+| index and failures | each thread returns them; the main thread collects them in order |
 
-## Manifest (añadido)
+## Manifest (added)
 
-`params.workers`: paralelismo usado.
+`params.workers`: parallelism used.

@@ -1,21 +1,21 @@
-# Contrato: configuración por variables `GCHAT_*`
+# Contract: configuration through `GCHAT_*` variables
 
-El script se configura solo por variables de entorno (o `scripts/.env`). Esta funcionalidad
-añade una y no cambia el significado de las demás.
+The script is configured only through environment variables (or `scripts/.env`). This feature
+adds one and does not change the meaning of the others.
 
-| Variable | Tipo | Defecto | Rango | Error si no es válida |
+| Variable | Type | Default | Range | Error if invalid |
 | :--- | :--- | :--- | :--- | :--- |
-| `GCHAT_WORKERS` | entero | `1` | 1–16 | `GCHAT_WORKERS debe ser un entero entre 1 y 16: '<valor>'`, sale antes de autenticar |
+| `GCHAT_WORKERS` | integer | `4` (was `1`; amended by spec 002 FR-011) | 1–16 | `Error: GCHAT_WORKERS must be an integer between 1 and 16: '<value>'` plus a `Hint:` line, exit 1 before authenticating |
 
-Sin cambios: `GCHAT_CLIENT_SECRET`, `GCHAT_TOKEN_FILE`, `GCHAT_OUT_DIR`, `GCHAT_SPACE_TYPES`,
+Unchanged: `GCHAT_CLIENT_SECRET`, `GCHAT_TOKEN_FILE`, `GCHAT_OUT_DIR`, `GCHAT_SPACE_TYPES`,
 `GCHAT_SPACE_FILTER`, `GCHAT_SINCE`, `GCHAT_DOWNLOAD_ATTACHMENTS`, `GCHAT_DRY_RUN`,
 `GCHAT_MIN_FREE_GB`.
 
-## Salida
+## Output
 
-- Estructura de carpetas: la misma (`<OUT_DIR>/<usuario>/<AAAA-MM-DD>_<chat>/`).
-- `manifest.json` → `params.workers` con el valor usado.
-- `index.json`: mismo contenido para cualquier valor de `GCHAT_WORKERS`, en el orden en que la
-  API lista los chats.
-- Códigos de salida: 0 al terminar o al detenerse por el freno de disco (con `stoppedEarly`);
-  distinto de 0 con valor de configuración no válido o Ctrl-C.
+- Folder structure: the same (`<OUT_DIR>/<user>/<YYYY-MM-DD>_<chat>/`).
+- `manifest.json` → `params.workers` with the value used.
+- `index.json`: same content for any value of `GCHAT_WORKERS`, in the order in which the API
+  lists the chats.
+- Exit codes: 0 on finishing or on stopping due to the disk brake (with `stoppedEarly`);
+  non-zero with an invalid configuration value or Ctrl-C.

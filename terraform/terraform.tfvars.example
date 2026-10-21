@@ -1,9 +1,9 @@
-# Copia este fichero a terraform.tfvars y rellena tus valores.
-# terraform.tfvars está en .gitignore: no se sube al repo.
+# Copy this file to terraform.tfvars and fill in your values.
+# terraform.tfvars is in .gitignore: it is not pushed to the repo.
 
 project_id = "your-gcp-project-id"
 
-# --- Solo si quieres que Terraform cree el proyecto (avanzado) ---
+# --- Only if you want Terraform to create the project (advanced) ---
 # create_project  = true
 # project_name    = "chatea"
 # billing_account = "XXXXXX-XXXXXX-XXXXXX"

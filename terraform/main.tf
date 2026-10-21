@@ -1,5 +1,5 @@
-# Creación opcional del proyecto. Con create_project = false (por defecto)
-# este recurso no se crea y se usa el proyecto indicado en var.project_id.
+# Optional project creation. With create_project = false (the default)
+# this resource is not created and the project given in var.project_id is used.
 resource "google_project" "chatea" {
   count           = var.create_project ? 1 : 0
   name            = var.project_name
@@ -8,18 +8,18 @@ resource "google_project" "chatea" {
   org_id          = var.org_id != "" ? var.org_id : null
 }
 
-# Habilita las APIs necesarias. Esto es lo único de toda la configuración
-# que Google expone por API y, por tanto, lo único terraformable.
+# Enables the required APIs. This is the only part of the whole setup
+# that Google exposes through an API and, therefore, the only part Terraform can manage.
 resource "google_project_service" "apis" {
   for_each = toset(var.services)
 
   project = var.project_id
   service = each.value
 
-  # Reversibilidad: por defecto, 'terraform destroy' deshabilita las APIs.
-  # Controlable con var.disable_on_destroy. Ojo en proyectos compartidos.
+  # Reversibility: by default, 'terraform destroy' disables the APIs.
+  # Controlled by var.disable_on_destroy. Careful with shared projects.
   disable_on_destroy = var.disable_on_destroy
 
-  # Si el proyecto lo crea este mismo plan, espera a tenerlo.
+  # If this same plan creates the project, wait until it exists.
   depends_on = [google_project.chatea]
 }

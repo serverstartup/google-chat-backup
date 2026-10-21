@@ -1,4 +1,4 @@
-# Specification Quality Checklist: Exportación de chats en paralelo compatible con Dropbox "solo en línea"
+# Specification Quality Checklist: Parallel chat export compatible with Dropbox "online-only"
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2026-10-21
@@ -31,7 +31,7 @@
 
 ## Notes
 
-- Las cuotas de Google y la ausencia de orden de terminal para "solo en línea" aparecen en
-  Assumptions como hechos de contexto con fecha, no como diseño.
-- SC-003 depende de una verificación manual: hoy no hay ningún fichero de Dropbox marcado
-  "solo en línea" para probarlo.
+- The Google quotas and the absence of a terminal command for "online-only" appear in
+  Assumptions as dated context facts, not as design.
+- SC-003 depends on a manual verification: today there is no Dropbox file marked
+  "online-only" to test it with.

@@ -1,97 +1,102 @@
 <!--
 Sync Impact Report
-- Versión: plantilla → 1.0.0 (primera ratificación)
-- Principios añadidos: I Simplicidad, II Reanudable e idempotente, III Datos del cliente fuera del
-  repo, IV Reversibilidad, V Respetar cuotas y recursos, VI Verificación con evidencia
-- Secciones añadidas: Restricciones de operación, Flujo de trabajo, Gobierno
-- Secciones eliminadas: ninguna
-- TODO diferidos: ninguno
+- Version: 1.0.0 → 2.0.0 (MAJOR: a constraint is redefined)
+- Modified sections: Operating constraints — documentation, code comments and runtime messages
+  are now in English (previously: documentation and comments in Spanish); output folder names
+  stay in English with an ISO date prefix (`YYYY-MM-DD_<chat>`)
+- Other changes: whole document translated from Spanish to English with no change in meaning;
+  Principle IV now points to `docs/REVERT.md` (renamed from `docs/REVERTIR.md`)
+- Principles added: none
+- Sections added: none
+- Sections removed: none
+- Dependent artifacts: `specs/001-parallel-chat-export/` translated to English in the same pass
+- Deferred TODOs: none
 -->
 
 # google-chat-backup Constitution
 
 ## Core Principles
 
-### I. Simplicidad
+### I. Simplicity
 
-- Un único script Python (`scripts/gchat_backup.py`), sin servicios, bases de datos ni demonios.
-- La salida son carpetas legibles: una por chat, con el JSON original de la API y `attachments/`.
-  Nada de formatos propios que haya que convertir para leerlos.
-- Toda la configuración entra por variables `GCHAT_*`, también desde `scripts/.env`. Cada
-  variable nueva MUST tener un valor por defecto que funcione sin tocarla.
-- Una funcionalidad que añada una dependencia, un proceso aparte o un paso manual MUST
-  justificar en su plan por qué no basta algo más simple.
+- A single Python script (`scripts/gchat_backup.py`), with no services, databases or daemons.
+- The output is readable folders: one per chat, with the original API JSON and `attachments/`.
+  No custom formats that need converting before they can be read.
+- All configuration comes in through `GCHAT_*` variables, also from `scripts/.env`. Every new
+  variable MUST have a default value that works without touching it.
+- A feature that adds a dependency, a separate process or a manual step MUST justify in its
+  plan why something simpler is not enough.
 
-Razón: lo ejecutan tres personas una sola vez antes del apagón de Workspace, y el responsable
-pidió explícitamente nada complejo.
+Rationale: three people run it once each before the Workspace shutdown, and the person in
+charge explicitly asked for nothing complex.
 
-### II. Reanudable e idempotente
+### II. Resumable and idempotent
 
-- Relanzar el script MUST NOT repetir descargas completas ni duplicar carpetas de chats.
-- Un corte (Ctrl-C, disco lleno, red, cuota) MUST dejar datos coherentes: escritura atómica de
-  JSON y adjuntos a `.part` renombrados solo al terminar.
-- La identidad de un chat es su id de la API, no su nombre: un cambio de nombre no crea carpeta
-  nueva.
+- Relaunching the script MUST NOT repeat complete downloads nor duplicate chat folders.
+- An interruption (Ctrl-C, full disk, network, quota) MUST leave consistent data: atomic writes
+  of JSON and attachments to `.part` files renamed only once finished.
+- A chat's identity is its API id, not its name: a rename does not create a new folder.
 
-Razón: las exportaciones tardan horas y se interrumpen; repetir trabajo cuesta tiempo y cuota.
+Rationale: exports take hours and get interrupted; repeating work costs time and quota.
 
-### III. Datos del cliente fuera del repositorio
+### III. Client data outside the repository
 
-- 0 credenciales, 0 nombres de cliente, 0 identificadores de proyecto y 0 datos exportados en git.
-- El hook `pre-commit` (`core.hooksPath .githooks`) con la denylist local MUST estar activo.
-- La salida del backup vive fuera del repositorio (carpeta de Dropbox); los ficheros locales con
-  datos sensibles (`.env`, `terraform.tfvars`, `token.json`, `client_secret_*`) están ignorados.
+- 0 credentials, 0 client names, 0 project identifiers and 0 exported data in git.
+- The `pre-commit` hook (`core.hooksPath .githooks`) with the local denylist MUST be active.
+- The backup output lives outside the repository (a Dropbox folder); the local files holding
+  sensitive data (`.env`, `terraform.tfvars`, `token.json`, `client_secret_*`) are ignored.
 
-Razón: el repositorio es compartible y los datos pertenecen a un cliente.
+Rationale: the repository is shareable and the data belongs to a client.
 
-### IV. Reversibilidad
+### IV. Reversibility
 
-- Todo lo activado en GCP MUST revertirse con `terraform destroy` más los pasos de
-  `docs/REVERTIR.md`.
-- Terraform gestiona solo lo que tiene API; lo manual está documentado en `docs/MANUAL_STEPS.md`.
+- Everything enabled in GCP MUST be reverted with `terraform destroy` plus the steps in
+  `docs/REVERT.md`.
+- Terraform manages only what has an API; the manual part is documented in
+  `docs/MANUAL_STEPS.md`.
 
-Razón: el proyecto GCP es compartido con el cliente y debe quedar como estaba.
+Rationale: the GCP project is shared with the client and must be left as it was.
 
-### V. Respetar cuotas y recursos
+### V. Respect quotas and resources
 
-- El script MUST NOT superar las cuotas publicadas de la API de Google Chat: ante un 429 o un
-  5xx reintenta con backoff exponencial y nunca lanza más peticiones simultáneas de las que el
-  usuario configure.
-- El script MUST NOT llenar el disco: se detiene limpio por debajo de `GCHAT_MIN_FREE_GB`.
-- Cualquier forma de paralelismo MUST ser configurable, con valor por defecto conservador.
+- The script MUST NOT exceed the published Google Chat API quotas: on a 429 or a 5xx it retries
+  with exponential backoff and never issues more simultaneous requests than the user
+  configures.
+- The script MUST NOT fill the disk: it stops cleanly below `GCHAT_MIN_FREE_GB`.
+- Any form of parallelism MUST be configurable, with a conservative default value.
 
-Razón: un bloqueo por cuota o un disco lleno interrumpen el backup y pueden afectar a otras
-cargas del proyecto compartido o del equipo.
+Rationale: a quota block or a full disk interrupts the backup and can affect other workloads
+of the shared project or of the team.
 
-### VI. Verificación con evidencia
+### VI. Verification with evidence
 
-- Cada cambio se prueba contra datos reales o con una prueba que demuestre que el mecanismo
-  falla cuando debe (positivo y negativo).
-- Los informes dan recuentos y tamaños, nunca contenido de mensajes ni nombres de chats.
+- Every change is tested against real data or with a test that shows the mechanism fails when
+  it should (positive and negative).
+- Reports give counts and sizes, never message content nor chat names.
 
-Razón: un backup que parece completo y no lo es se descubre cuando ya no hay vuelta atrás.
+Rationale: a backup that looks complete and is not is discovered when there is no going back.
 
-## Restricciones de operación
+## Operating constraints
 
-- Python 3.9+ y solo las dependencias de Google (`google-api-python-client`,
-  `google-auth-oauthlib`); el resto, biblioteca estándar.
-- Autenticación de usuario (OAuth de escritorio): solo se exporta lo que ve quien lo ejecuta.
-- Documentación y comentarios en castellano; nombres de carpetas de salida en inglés, con fecha
-  ISO (`AAAA-MM-DD_<chat>`).
+- Python 3.9+ and only the Google dependencies (`google-api-python-client`,
+  `google-auth-oauthlib`); everything else, the standard library.
+- User authentication (desktop OAuth): only what the person running it can see is exported.
+- Documentation, code comments and runtime messages in English; output folder names in
+  English, with an ISO date prefix (`YYYY-MM-DD_<chat>`).
 
-## Flujo de trabajo
+## Workflow
 
-- Cambios funcionales del script pasan por Spec Kit (`/speckit-specify` → `/speckit-plan` →
+- Functional changes to the script go through Spec Kit (`/speckit-specify` → `/speckit-plan` →
   `/speckit-tasks` → `/speckit-implement`).
-- Antes de cada commit: `py_compile` del script, prueba del mecanismo nuevo y comprobación de
-  que el historial no contiene términos de la denylist.
+- Before every commit: `py_compile` of the script, a test of the new mechanism and a check that
+  the history contains no denylist terms.
 
 ## Governance
 
-- Esta constitución prevalece sobre otras prácticas del proyecto. Un plan que la incumpla MUST
-  justificarlo en su sección de complejidad o cambiarse.
-- Enmiendas: se editan aquí con versión semántica (MAJOR: se elimina o redefine un principio;
-  MINOR: principio o sección nuevos; PATCH: redacción).
-- El contexto operativo con datos del cliente vive en `CLAUDE.local.md` (no versionado).
+- This constitution prevails over other project practices. A plan that breaks it MUST justify
+  it in its complexity section or be changed.
+- Amendments: edited here with semantic versioning (MAJOR: a principle is removed or redefined;
+  MINOR: a new principle or section; PATCH: wording).
+- The operating context with client data lives in `CLAUDE.local.md` (not versioned).
 
-**Version**: 1.0.0 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-10-21
+**Version**: 2.0.0 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-10-21

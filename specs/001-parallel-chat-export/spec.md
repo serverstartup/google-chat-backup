@@ -1,159 +1,161 @@
-# Feature Specification: Exportación de chats en paralelo compatible con Dropbox "solo en línea"
+# Feature Specification: Parallel chat export compatible with Dropbox "online-only"
 
 **Feature Branch**: `001-parallel-chat-export`
 **Created**: 2026-10-21
 **Status**: Draft
-**Input**: Exportar varios chats en paralelo, con el grado de paralelismo como parámetro y
-sin superar las cuotas de Google Chat, y que relanzar el backup sobre carpetas de Dropbox
-"solo en línea" no vuelva a descargar nada.
+**Input**: Export several chats in parallel, with the degree of parallelism as a parameter and
+without exceeding the Google Chat quotas, and make relaunching the backup over Dropbox
+"online-only" folders download nothing again.
 
 ## User Scenarios & Testing *(mandatory)*
 
-### User Story 1 - Backup más rápido con paralelismo configurable (Priority: P1)
+### User Story 1 - Faster backup with configurable parallelism (Priority: P1)
 
-Quien ejecuta el backup indica cuántos chats se exportan a la vez. Con varios a la vez, el
-backup completo de cientos de chats termina en una fracción del tiempo que tarda de uno en
-uno, sin que Google bloquee la cuenta por exceso de peticiones.
+Whoever runs the backup sets how many chats are exported at once. With several at once, the
+complete backup of hundreds of chats finishes in a fraction of the time it takes one by one,
+without Google blocking the account for too many requests.
 
-**Why this priority**: es lo que ha pedido el usuario. Al ritmo actual (unos 15 chats en 40
-minutos) los 433 chats tardarían casi un día, y la exportación tiene que estar hecha antes
-del apagón de Workspace, para tres personas.
+**Why this priority**: it is what the user asked for. At the current pace (about 15 chats in 40
+minutes) the 433 chats would take almost a day, and the export has to be done before the
+Workspace shutdown, for three people.
 
-**Independent Test**: lanzar el backup con paralelismo 1 y con paralelismo 4 sobre el mismo
-subconjunto de chats; comparar duración, número de errores y contenido resultante.
+**Independent Test**: launch the backup with parallelism 1 and with parallelism 4 over the same
+subset of chats; compare duration, number of errors and resulting content.
 
 **Acceptance Scenarios**:
 
-1. **Given** el parámetro de paralelismo sin definir, **When** se lanza el backup, **Then** se
-   comporta exactamente como hoy (un chat a la vez).
-2. **Given** paralelismo N > 1, **When** se lanza el backup, **Then** nunca hay más de N chats
-   exportándose a la vez y el resultado (carpetas, mensajes, adjuntos) es el mismo que con
-   paralelismo 1.
-3. **Given** que Google responde "demasiadas peticiones", **When** ocurre durante la
-   exportación, **Then** el backup espera y reintenta sin perder el chat ni abortar el resto.
-4. **Given** un valor de paralelismo no válido (no numérico, 0 o negativo), **When** se lanza
-   el backup, **Then** se detiene antes de empezar con un mensaje que dice qué valor es válido.
+1. **Given** the parallelism parameter is undefined, **When** the backup is launched, **Then** it
+   behaves exactly as today (one chat at a time).
+2. **Given** parallelism N > 1, **When** the backup is launched, **Then** there are never more than
+   N chats being exported at once and the result (folders, messages, attachments) is the same as
+   with parallelism 1.
+3. **Given** Google answers "too many requests", **When** it happens during the export,
+   **Then** the backup waits and retries without losing the chat or aborting the rest.
+4. **Given** an invalid parallelism value (non-numeric, 0 or negative), **When** the backup is
+   launched, **Then** it stops before starting with a message that says which value is valid.
 
 ---
 
-### User Story 2 - Relanzar sobre Dropbox "solo en línea" sin volver a descargar (Priority: P1)
+### User Story 2 - Relaunch over Dropbox "online-only" without downloading again (Priority: P1)
 
-El backup vive en una carpeta sincronizada con Dropbox. El usuario marca como "solo en línea"
-lo ya subido para liberar disco. Si después relanza el backup (por un corte o para completar),
-los adjuntos ya exportados no se vuelven a descargar de Google ni Dropbox los vuelve a bajar
-al disco.
+The backup lives in a folder synced with Dropbox. The user marks what has already been uploaded
+as "online-only" to free up disk. If they later relaunch the backup (after an interruption or to
+complete it), the attachments already exported are not downloaded again from Google, nor does
+Dropbox bring them back down to the disk.
 
-**Why this priority**: sin esto, marcar "solo en línea" para ahorrar disco haría que el
-siguiente relanzamiento volviera a llenar el disco y repitiera horas de descarga.
+**Why this priority**: without this, marking "online-only" to save disk would make the next
+relaunch fill the disk again and repeat hours of downloading.
 
-**Independent Test**: con un chat ya exportado, marcar su carpeta de adjuntos como "solo en
-línea" en el Finder, relanzar el backup y comprobar que los adjuntos siguen sin contenido local
-y que el backup los cuenta como ya existentes.
+**Independent Test**: with a chat already exported, mark its attachments folder as "online-only"
+in the Finder, relaunch the backup and check that the attachments still have no local content
+and that the backup counts them as already existing.
 
 **Acceptance Scenarios**:
 
-1. **Given** un adjunto ya exportado y marcado "solo en línea", **When** se relanza el backup,
-   **Then** se considera existente, no se descarga de Google y sigue "solo en línea".
-2. **Given** un adjunto a medio descargar de un corte anterior, **When** se relanza, **Then** se
-   descarga de nuevo y entero.
+1. **Given** an attachment already exported and marked "online-only", **When** the backup is
+   relaunched, **Then** it is considered existing, is not downloaded from Google and stays
+   "online-only".
+2. **Given** an attachment half-downloaded from an earlier interruption, **When** it is relaunched,
+   **Then** it is downloaded again, in full.
 
 ---
 
-### User Story 3 - Freno de disco y reanudación con varios chats a la vez (Priority: P2)
+### User Story 3 - Disk brake and resumption with several chats at once (Priority: P2)
 
-Con varios chats exportándose a la vez, el freno de disco sigue deteniendo todo limpio antes
-de llenar el disco, y un corte en mitad de varios chats se recupera relanzando, igual que hoy.
+With several chats being exported at once, the disk brake still stops everything cleanly before
+the disk fills up, and an interruption in the middle of several chats is recovered by
+relaunching, the same as today.
 
-**Why this priority**: el paralelismo no puede romper las dos garantías que ya existen.
+**Why this priority**: parallelism must not break the two guarantees that already exist.
 
-**Independent Test**: lanzar con paralelismo 4 y un mínimo de disco imposible; comprobar que
-se detiene sin descargar nada y deja el resumen marcado como detenido. Interrumpir con Ctrl-C
-a mitad y relanzar; comprobar que no hay duplicados ni ficheros a medias tomados por buenos.
+**Independent Test**: launch with parallelism 4 and an impossible disk minimum; check that it
+stops without downloading anything and leaves the summary marked as stopped. Interrupt with
+Ctrl-C midway and relaunch; check that there are no duplicates nor half-written files taken as
+good.
 
 **Acceptance Scenarios**:
 
-1. **Given** paralelismo N y el disco por debajo del mínimo, **When** cualquier chat va a
-   escribir, **Then** todos los chats en curso se detienen, se guarda el índice y el resumen con
-   el motivo, y no se empieza ningún chat nuevo.
-2. **Given** una interrupción con varios chats a medias, **When** se relanza, **Then** cada chat
-   termina en una sola carpeta y ningún adjunto incompleto queda como completo.
+1. **Given** parallelism N and the disk below the minimum, **When** any chat is about to write,
+   **Then** all chats in progress stop, the index and the summary are saved with the reason, and
+   no new chat is started.
+2. **Given** an interruption with several chats half done, **When** it is relaunched, **Then** each
+   chat ends up in a single folder and no incomplete attachment is left as complete.
 
 ### Edge Cases
 
-- Dos chats distintos que darían el mismo nombre de carpeta exportándose a la vez: cada uno
-  termina en su propia carpeta, nunca mezclados.
-- Un chat muy grande (miles de adjuntos) junto a muchos pequeños: los pequeños no esperan a
-  que termine el grande.
-- El token de sesión caduca durante la exportación en paralelo: se renueva sin que fallen los
-  chats en curso.
-- El progreso por pantalla con varios chats a la vez sigue siendo legible: cada línea dice a
-  qué chat se refiere y el contador global avanza.
-- Paralelismo mayor que el número de chats: no es un error.
+- Two different chats that would get the same folder name being exported at once: each one ends
+  up in its own folder, never mixed.
+- A very large chat (thousands of attachments) alongside many small ones: the small ones do not
+  wait for the large one to finish.
+- The session token expires during the parallel export: it is renewed without the chats in
+  progress failing.
+- On-screen progress with several chats at once stays readable: each line says which chat it
+  refers to and the global counter advances.
+- Parallelism greater than the number of chats: not an error.
 
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
 
-- **FR-001**: El backup MUST aceptar un parámetro de paralelismo (número de chats exportados a
-  la vez), con valor por defecto 1, configurable igual que el resto de parámetros.
-- **FR-002**: El backup MUST rechazar antes de empezar un valor de paralelismo no válido, con
-  un mensaje que diga el rango válido.
-- **FR-003**: El backup MUST NOT tener en ningún momento más chats en exportación que el
-  paralelismo configurado.
-- **FR-004**: Ante respuestas de límite de peticiones o errores temporales del servidor, el
-  backup MUST reintentar con esperas crecientes y MUST NOT dar el chat por fallido mientras
-  queden reintentos.
-- **FR-005**: El resultado del backup (carpetas, ficheros de mensajes, adjuntos, índice) MUST
-  ser el mismo con cualquier valor de paralelismo, salvo el orden de las líneas de progreso.
-- **FR-006**: Para decidir si un adjunto ya existe, el backup MUST usar solo la información de
-  metadatos del fichero (existencia y tamaño), sin leer su contenido, de modo que un fichero
-  "solo en línea" de Dropbox no se descargue.
-- **FR-007**: Un adjunto interrumpido a mitad MUST NOT contar como existente al relanzar.
-- **FR-008**: El freno de disco MUST detener todos los chats en curso y no empezar ninguno
-  nuevo; el índice y el resumen MUST guardarse con el motivo.
-- **FR-009**: Dos chats que den el mismo nombre de carpeta MUST acabar en carpetas distintas
-  aunque se exporten a la vez.
-- **FR-010**: El resumen final MUST registrar el paralelismo usado, junto al resto de
-  parámetros.
-- **FR-011**: La documentación MUST explicar cómo elegir el paralelismo y cómo marcar "solo en
-  línea" en Dropbox, incluido que no hay forma automática desde la terminal.
+- **FR-001**: The backup MUST accept a parallelism parameter (number of chats exported at once),
+  with default value 1, configurable the same way as the other parameters. *Amended 2026-10-21 by
+  spec 002 FR-011: the default is 4, measured with 0 quota retries.*
+- **FR-002**: The backup MUST reject an invalid parallelism value before starting, with a
+  message that states the valid range.
+- **FR-003**: The backup MUST NOT at any moment have more chats being exported than the
+  configured parallelism.
+- **FR-004**: On rate-limit responses or temporary server errors, the backup MUST retry with
+  increasing waits and MUST NOT mark the chat as failed while retries remain.
+- **FR-005**: The result of the backup (folders, message files, attachments, index) MUST be the
+  same with any parallelism value, except for the order of the progress lines.
+- **FR-006**: To decide whether an attachment already exists, the backup MUST use only the
+  file's metadata (existence and size), without reading its content, so that a Dropbox
+  "online-only" file is not downloaded.
+- **FR-007**: An attachment interrupted midway MUST NOT count as existing on relaunch.
+- **FR-008**: The disk brake MUST stop all chats in progress and start no new one; the index and
+  the summary MUST be saved with the reason.
+- **FR-009**: Two chats that produce the same folder name MUST end up in different folders even
+  if they are exported at once.
+- **FR-010**: The final summary MUST record the parallelism used, alongside the other
+  parameters.
+- **FR-011**: The documentation MUST explain how to choose the parallelism and how to mark
+  "online-only" in Dropbox, including that there is no automatic way to do it from the terminal.
 
 ### Key Entities
 
-- **Chat**: espacio, grupo o conversación 1 a 1; se identifica por su id y se guarda en una
-  carpeta propia `<fecha>_<nombre>`.
-- **Adjunto**: fichero subido a un chat; existe en disco completo, a medias (`.part`) o "solo
-  en línea" (marcador local con el contenido en Dropbox).
-- **Parámetro de paralelismo**: número entero ≥ 1 de chats simultáneos.
+- **Chat**: space, group or 1:1 conversation; it is identified by its id and saved in its own
+  folder `<date>_<name>`.
+- **Attachment**: file uploaded to a chat; it exists on disk complete, half-written (`.part`) or
+  "online-only" (a local placeholder with the content in Dropbox).
+- **Parallelism parameter**: integer ≥ 1 of simultaneous chats.
 
 ## Success Criteria *(mandatory)*
 
 ### Measurable Outcomes
 
-- **SC-001**: Con paralelismo 4, exportar el mismo conjunto de chats tarda como máximo la
-  mitad que con paralelismo 1.
-- **SC-002**: Un backup completo con paralelismo 4 termina con 0 chats fallidos por límite de
-  peticiones.
-- **SC-003**: Relanzar el backup sobre chats ya exportados y marcados "solo en línea" descarga
-  0 adjuntos y no aumenta el espacio ocupado en disco por esos chats.
-- **SC-004**: Con el disco por debajo del mínimo, el backup se detiene sin escribir ningún
-  adjunto nuevo, con cualquier paralelismo.
-- **SC-005**: Tras interrumpir y relanzar con paralelismo 4, el número de carpetas de chat es
-  igual al número de chats exportados (0 duplicados).
+- **SC-001**: With parallelism 4, exporting the same set of chats takes at most half as long as
+  with parallelism 1.
+- **SC-002**: A complete backup with parallelism 4 finishes with 0 chats failed due to the rate
+  limit.
+- **SC-003**: Relaunching the backup over chats already exported and marked "online-only"
+  downloads 0 attachments and does not increase the disk space taken by those chats.
+- **SC-004**: With the disk below the minimum, the backup stops without writing any new
+  attachment, with any parallelism.
+- **SC-005**: After interrupting and relaunching with parallelism 4, the number of chat folders
+  equals the number of chats exported (0 duplicates).
 
 ## Assumptions
 
-- Las cuotas publicadas por Google (leídas el 2026-10-21) son 3000 lecturas por minuto por
-  proyecto para mensajes, miembros, espacios y adjuntos, y 15 lecturas por segundo por espacio.
-  Con un chat por hilo de trabajo y pocos chats a la vez, el límite por espacio no se comparte
-  entre hilos; el que importa es el del proyecto.
-- Un paralelismo de 4 es un punto de partida razonable; el valor por defecto sigue siendo 1
-  para no cambiar el comportamiento de quien no lo toque.
-- En macOS 15 no existe una orden de terminal para marcar ficheros de Dropbox como "solo en
-  línea"; se hace desde el Finder o lo hace el sistema cuando falta disco. El backup no intenta
-  forzarlo.
-- Que consultar existencia y tamaño de un fichero "solo en línea" no lo descarga es el
-  comportamiento esperado de los ficheros sin contenido local en macOS; se verificará con un
-  fichero real marcado desde el Finder (no hay ninguno marcado hoy).
-- Fuera de alcance: subir a Dropbox desde el script, comprimir, convertir formatos, unir las
-  exportaciones de varias personas.
+- The quotas published by Google (read on 2026-10-21) are 3000 reads per minute per project for
+  messages, members, spaces and attachments, and 15 reads per second per space. With one chat per
+  worker thread and few chats at once, the per-space limit is not shared between threads; the
+  one that matters is the project's.
+- A parallelism of 4 is a reasonable starting point; the default value stays 1 so as not to
+  change the behaviour for anyone who does not touch it.
+- On macOS 15 there is no terminal command to mark Dropbox files as "online-only"; it is done
+  from the Finder, or the system does it when disk runs low. The backup does not try to force it.
+- That querying the existence and size of an "online-only" file does not download it is the
+  expected behaviour of files without local content on macOS; it will be verified with a real
+  file marked from the Finder (none is marked today).
+- Out of scope: uploading to Dropbox from the script, compressing, converting formats, merging
+  the exports of several people.

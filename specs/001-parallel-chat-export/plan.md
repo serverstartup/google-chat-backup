@@ -1,4 +1,4 @@
-# Implementation Plan: Exportación de chats en paralelo compatible con Dropbox "solo en línea"
+# Implementation Plan: Parallel chat export compatible with Dropbox "online-only"
 
 **Branch**: `001-parallel-chat-export` | **Date**: 2026-10-21 | **Spec**: [spec.md](spec.md)
 
@@ -6,52 +6,52 @@
 
 ## Summary
 
-Añadir a `scripts/gchat_backup.py` un parámetro `GCHAT_WORKERS` (por defecto 1) que exporta
-hasta N chats a la vez con un `ThreadPoolExecutor` de la biblioteca estándar, un cliente de la
-API por hilo y un candado para lo compartido (nombres de carpeta, log). El freno de disco y
-Ctrl-C pasan a ser una señal de parada común que todos los hilos consultan antes de cada chat y
-de cada adjunto. La comprobación de "adjunto ya existe" se queda en metadatos (`stat`), que es
-lo que hace falta para no despertar ficheros "solo en línea" de Dropbox.
+Add to `scripts/gchat_backup.py` a `GCHAT_WORKERS` parameter (default 1) that exports up to N
+chats at once with a standard-library `ThreadPoolExecutor`, one API client per thread and a lock
+for what is shared (folder names, log). The disk brake and Ctrl-C become a common stop signal
+that every thread checks before each chat and before each attachment. The "attachment already
+exists" check stays on metadata (`stat`), which is what is needed so as not to wake up Dropbox
+"online-only" files.
 
 ## Technical Context
 
-**Language/Version**: Python 3.9+ (venv del proyecto en 3.12)
+**Language/Version**: Python 3.9+ (project venv on 3.12)
 
-**Primary Dependencies**: `google-api-python-client`, `google-auth-oauthlib` (ya en uso);
-`concurrent.futures` y `threading` de la biblioteca estándar
+**Primary Dependencies**: `google-api-python-client`, `google-auth-oauthlib` (already in use);
+`concurrent.futures` and `threading` from the standard library
 
-**Storage**: ficheros en disco: carpeta de Dropbox (`GCHAT_OUT_DIR`), un directorio por chat
+**Storage**: files on disk: Dropbox folder (`GCHAT_OUT_DIR`), one directory per chat
 
-**Testing**: pruebas de mecanismo con la API real sobre un subconjunto (`GCHAT_SPACE_FILTER`) y
-una carpeta de salida temporal; prueba negativa del freno de disco; sin suite de tests (el
-proyecto es un script de un solo uso)
+**Testing**: mechanism tests with the real API over a subset (`GCHAT_SPACE_FILTER`) and a
+temporary output folder; negative test of the disk brake; no test suite (the project is a
+single-use script)
 
-**Target Platform**: macOS 15 (portátil de quien exporta), Dropbox sobre File Provider
+**Target Platform**: macOS 15 (the exporting person's laptop), Dropbox on File Provider
 
-**Project Type**: CLI de un solo fichero
+**Project Type**: single-file CLI
 
-**Performance Goals**: con 4 hilos, al menos 2× más rápido que con 1 sobre el mismo conjunto
+**Performance Goals**: with 4 threads, at least 2× faster than with 1 over the same set
 (SC-001)
 
-**Constraints**: cuotas de Google Chat (3000 lecturas/min por proyecto y tipo; 15 lecturas/s
-por espacio); 0 chats fallidos por 429; freno de disco intacto
+**Constraints**: Google Chat quotas (3000 reads/min per project and type; 15 reads/s per
+space); 0 chats failed due to 429; disk brake intact
 
-**Scale/Scope**: 433 chats de Julio, del orden de decenas de GB; después Nacho y Dani
+**Scale/Scope**: Julio's 433 chats, in the order of tens of GB; then Nacho and Dani
 
 ## Constitution Check
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-| Principio | Cumple | Cómo |
+| Principle | Complies | How |
 | :--- | :--- | :--- |
-| I Simplicidad | Sí | Biblioteca estándar, una variable nueva con defecto 1 que reproduce el comportamiento actual |
-| II Reanudable | Sí | La escritura atómica no cambia; carpeta reservada bajo candado para no duplicar |
-| III Datos fuera del repo | Sí | La salida sigue en Dropbox; nada nuevo se versiona salvo código y specs |
-| IV Reversibilidad | Sí | No toca GCP ni Terraform |
-| V Cuotas y recursos | Sí | Defecto 1, máximo 16, backoff de la librería hasta 64 s, freno de disco común |
-| VI Evidencia | Sí | Quickstart con prueba positiva (tiempos) y negativa (freno, valor inválido) |
+| I Simplicity | Yes | Standard library, one new variable with default 1 that reproduces the current behaviour |
+| II Resumable | Yes | Atomic writing does not change; folder reserved under a lock so as not to duplicate |
+| III Data outside the repo | Yes | The output stays in Dropbox; nothing new is versioned except code and specs |
+| IV Reversibility | Yes | Does not touch GCP or Terraform |
+| V Quotas and resources | Yes | Default 1, maximum 16, library backoff up to 64 s, common disk brake |
+| VI Evidence | Yes | Quickstart with a positive test (timings) and negative ones (brake, invalid value) |
 
-Re-check tras el diseño: sin cambios, ninguna desviación que justificar.
+Re-check after the design: no changes, no deviation to justify.
 
 ## Project Structure
 
@@ -59,26 +59,26 @@ Re-check tras el diseño: sin cambios, ninguna desviación que justificar.
 
 ```text
 specs/001-parallel-chat-export/
-├── plan.md              # este fichero
-├── research.md          # decisiones de la fase 0
-├── data-model.md        # entidades y estados
-├── quickstart.md        # cómo validar de punta a punta
+├── plan.md              # this file
+├── research.md          # phase 0 decisions
+├── data-model.md        # entities and states
+├── quickstart.md        # how to validate end to end
 ├── contracts/
-│   └── env-config.md    # contrato de variables GCHAT_*
-└── tasks.md             # lo genera /speckit-tasks
+│   └── env-config.md    # contract of the GCHAT_* variables
+└── tasks.md             # generated by /speckit-tasks
 ```
 
 ### Source Code (repository root)
 
 ```text
 scripts/
-├── gchat_backup.py      # único fichero que cambia
-└── .env.example         # documenta GCHAT_WORKERS
-README.md                # cómo elegir hilos y cómo marcar "solo en línea"
+├── gchat_backup.py      # the only file that changes
+└── .env.example         # documents GCHAT_WORKERS
+README.md                # how to choose threads and how to mark "online-only"
 ```
 
-**Structure Decision**: proyecto de un solo script; no se añaden módulos ni ficheros de código.
+**Structure Decision**: single-script project; no modules or code files are added.
 
 ## Complexity Tracking
 
-Sin desviaciones de la constitución.
+No deviations from the constitution.
