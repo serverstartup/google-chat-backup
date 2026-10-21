@@ -17,25 +17,24 @@ The project has two phases, done by different people:
 | **Backup** | anyone with access, with their own account | whenever they want to save their chats | this page |
 
 This page is the backup. It needs no Google Cloud tools and no Terraform: only what the maintainer
-hands over. Changing the code is in [CONTRIBUTING.md](CONTRIBUTING.md).
+hands over. Changing the code is in [CONTRIBUTING.md](CONTRIBUTING.md); the code is under the
+[MIT License](LICENSE).
 
 **You need:** Git and [Python](https://www.python.org/downloads/) 3.9 or above (`python3 --version`;
 on Windows, `py --version`). The commands below use `python3`; on Windows type `py` instead.
 
-**Ask the project maintainer for** three things before you start (the maintainer's side is
+**Ask the project maintainer for** two things before you start (the maintainer's side is
 [Give a teammate access](docs/how-to/bootstrap.md#3-give-a-teammate-access)):
 
-1. Read access to the private [serverstartup/google-chat-backup](https://github.com/serverstartup/google-chat-backup)
-   repository. Accept the invitation GitHub emails you.
-2. To be added as a test user of the app, with your work email. Without it, Google refuses your
+1. To be added as a test user of the app, with your work email. Without it, Google refuses your
    sign-in with "Access blocked".
-3. The `client_secret_….apps.googleusercontent.com.json` file. The maintainer creates it once in
+2. The `client_secret_….apps.googleusercontent.com.json` file. The maintainer creates it once in
    Google Cloud for the whole team and sends it to you over a private channel; it is never in the
    repository. What it is for: [Explanation: who can read what](#explanation-who-can-read-what).
 
 | Section | You are… |
 |:--|:--|
-| [1. Get the code](#1-get-the-code) | holding the three things above |
+| [1. Get the code](#1-get-the-code) | holding the two things above |
 | [2. Preview your chats](#2-preview-your-chats) | ready for the first run |
 | [3. Run the backup](#3-run-the-backup) | happy with the list of chats |
 | [4. Hand over the backup](#4-hand-over-the-backup) | done |
@@ -47,9 +46,8 @@ on Windows, `py --version`). The commands below use `python3`; on Windows type `
 
 ### `TL;DR`
 
-1. Clone the repository. It is private, so Git asks you to sign in to GitHub the way it usually
-   does on your machine. Without Git access, use **Code → Download ZIP** on the repository page and
-   unzip it as `google-chat-backup`.
+1. Clone the repository; it is public, so no GitHub account is needed. Without Git, use
+   **Code → Download ZIP** on the repository page and unzip it as `google-chat-backup`.
    ```bash
    git clone https://github.com/serverstartup/google-chat-backup.git
    ```

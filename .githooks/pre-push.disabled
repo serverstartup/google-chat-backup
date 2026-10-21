@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 #
+# DISABLED: git runs a hook only under its exact name, and this file is pre-push.disabled.
+# The repository is public, so GitHub enforces the same thing on the server (the "Protect main"
+# ruleset: no direct push, no force-push, no deletion). Kept for a private copy, where that
+# ruleset needs a paid plan. Re-enable it with: git mv .githooks/pre-push.disabled .githooks/pre-push
+#
 # Refuses any push that updates or deletes main: changes reach main only through a pull
-# request. GitHub enforces nothing here (branch protection on a private repository needs a
-# paid plan), so this hook is the guard. Tags and every other branch push normally.
+# request. Tags and every other branch push normally.
 #
 # Skip it once (at your own risk): git push --no-verify
 set -euo pipefail

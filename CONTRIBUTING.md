@@ -30,7 +30,7 @@ google-chat-backup/
 │   └── resources/env/       template.env, terraform-default.tfvars.json; the real .default.env
 │                            holds the project id and is never committed
 ├── docs/how-to/bootstrap.md Bootstrap phase: Terraform, console steps, access, teardown
-├── .githooks/               pre-commit (client data, credentials) and pre-push (no push to main)
+├── .githooks/               pre-commit (client data, credentials); pre-push.disabled (see below)
 ├── .gitleaks.toml           gitleaks rules for this repository (the defaults) and its exemptions
 ├── specs/                   Spec Kit specifications, one folder per feature
 └── .specify/                Spec Kit constitution and templates
@@ -43,23 +43,33 @@ google-chat-backup/
 backup output folders. The client secret, the session token and the project id live **only** on
 each person's machine.
 
-Two hooks in `.githooks/` guard the repository. `pre-commit` **aborts the commit** when the staged
-files contain credentials, Terraform state, any term from a **local denylist**, or (with
+The repository is public, so two layers guard it. **On GitHub**, enforced for everyone:
+
+| Setting | What it does |
+|:--|:--|
+| Ruleset *Protect main* | no direct push to `main`, no force-push, no deletion: changes arrive through a pull request (merge commit) |
+| Secret scanning with push protection | GitHub rejects a push that carries a credential of a known provider, and alerts on any it finds |
+| Dependabot | alerts and security update pull requests for `scripts/requirements.txt` and the Terraform provider |
+| Private vulnerability reporting | anyone can report a vulnerability privately from the *Security* tab |
+
+**In your clone**, the `pre-commit` hook in `.githooks/` **aborts the commit** when the staged files
+contain credentials, Terraform state, any term from a **local denylist**, or (with
 [gitleaks](https://github.com/gitleaks/gitleaks) installed) a credential recognised by its shape.
-`pre-push` **refuses any push to `main`**: changes reach it only through a pull request. GitHub
-does not enforce that on this plan, so the hook is the guard. The denylist (`denylist.txt`)
+It stops a secret before it is even committed, and the denylist covers what GitHub cannot know:
+the client's name. `.githooks/pre-push.disabled` is the guard for `main` that the ruleset replaced;
+its header says how to re-enable it in a private copy. The denylist (`denylist.txt`)
 is **not versioned**: it lives only on your machine, so the forbidden term (a client name, for
 example) never reaches the repository, not even inside the hook. The hook names the file, never
 the term.
 
-Set them up in every clone; they do not activate by themselves:
+Set it up in every clone; it does not activate by itself:
 
 ```bash
-git config core.hooksPath .githooks        # activate both hooks
+git config core.hooksPath .githooks        # activate the hook
 cp denylist.example.txt denylist.txt        # then add your terms (one regex per line)
 ```
 
-The hooks see staged files only. Before a pull request, scan every ref of the history for
+The hook sees staged files only. Before a pull request, scan every ref of the history for
 credentials, and check the history and the commit messages for denylist terms:
 
 ```bash
@@ -68,8 +78,8 @@ T=$(grep -vE '^(#|$)' denylist.txt | paste -sd'|' -)
 git grep -i -l -E "$T" $(git rev-list --all); git log --all --format=%B | grep -ciE "$T"
 ```
 
-Expect `no leaks found`, then no file names and `0`. For a one-off legitimate case, skip a hook with
-`git commit --no-verify` or `git push --no-verify`. A false positive from gitleaks is exempted in
+Expect `no leaks found`, then no file names and `0`. For a one-off legitimate case, skip the hook with
+`git commit --no-verify`. A false positive from gitleaks is exempted in
 `.gitleaks.toml`, with the reason written beside it.
 
 ## Change the code
@@ -94,7 +104,7 @@ Expect `no leaks found`, then no file names and `0`. For a one-off legitimate ca
 
 ## Release
 
-Work on a branch and reach `main` through a pull request. A release is an annotated tag `vX.Y.Z`
+Work on a branch and reach `main` through a pull request (the ruleset accepts nothing else). A release is an annotated tag `vX.Y.Z`
 on `main` and a GitHub release whose notes come from the commits since the previous tag.
 
 ### Prior art (why this script and not a fork)

@@ -27,9 +27,7 @@ Terraform enables the Google Chat API and the People API in the project. Its sta
 
 **You need:** a clone of the repository ([README: Get the code](../../README.md#1-get-the-code)),
 [Terraform](https://developer.hashicorp.com/terraform/install) 1.7 or above, the
-[Google Cloud CLI](https://cloud.google.com/sdk/docs/install), Python 3.9 or above, the editor or
-owner role on the project, and admin rights on the GitHub repository to invite teammates (with the
-[GitHub CLI](https://cli.github.com), or from the repository's *Settings → Collaborators*).
+[Google Cloud CLI](https://cloud.google.com/sdk/docs/install), Python 3.9 or above, and the editor or owner role on the project.
 
 ### `TL;DR`
 
@@ -135,17 +133,12 @@ for the whole team; who each person is comes from their own sign-in.
 
 ### `TL;DR`
 
-1. Invite them to the repository with read access.
-   ```bash
-   gh api -X PUT repos/serverstartup/google-chat-backup/collaborators/<their-github-user> -f permission=pull
-   ```
-   Expect: GitHub sends them an invitation.
-2. Add their work email as a test user: *Google Auth Platform* → *Audience* → *Test users*. Skip it
+1. Add their work email as a test user: *Google Auth Platform* → *Audience* → *Test users*. Skip it
    if the app type is Internal.
    Expect: their email is in the list. Without it, their sign-in ends in "Access blocked".
-3. Send them the `client_secret_….json` file over a private channel: never through the repository,
+2. Send them the `client_secret_….json` file over a private channel: never through the repository,
    nor through a chat that is going to be exported.
-4. Agree where they leave their `scripts/gchat-backup/<user>/` folder when they finish.
+3. Agree where they leave their `scripts/gchat-backup/<user>/` folder when they finish.
 
 ---
 
