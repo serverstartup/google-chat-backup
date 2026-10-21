@@ -23,14 +23,15 @@ Se puede ejecutar varias veces: reescribe los mensajes y no vuelve a bajar
 adjuntos que ya existen. Cada chat conserva su carpeta aunque luego cambie de nombre
 (se reconoce por el id guardado en space.json).
 
-Dependencias:
-  pip install google-api-python-client google-auth-oauthlib
+Dependencias: scripts/requirements.txt (ver CONTRIBUTING.md).
 
 Variables de entorno (también se leen de scripts/.env, que está en .gitignore;
 plantilla en scripts/.env.example):
-  GCHAT_CLIENT_SECRET  (obligatoria) ruta al JSON del cliente OAuth "Aplicación de escritorio"
+  Las rutas relativas cuentan desde la carpeta scripts/.
+  GCHAT_CLIENT_SECRET   ruta al JSON del cliente OAuth "Aplicación de escritorio"
+                        [el único client_secret_*.json que haya en scripts/]
   GCHAT_TOKEN_FILE      ruta donde guardar el token de sesión       [token.json]
-  GCHAT_OUT_DIR         carpeta de salida                            [./gchat-backup]
+  GCHAT_OUT_DIR         carpeta de salida                            [gchat-backup]
   GCHAT_SPACE_TYPES     tipos a exportar, separados por comas        [SPACE,GROUP_CHAT,DIRECT_MESSAGE]
                         SPACE = espacio con nombre, GROUP_CHAT = grupo sin nombre,
                         DIRECT_MESSAGE = chat 1 a 1
@@ -84,7 +85,8 @@ def load_dotenv(path: Path):
         os.environ.setdefault(key, value.strip().strip("'\""))
 
 
-load_dotenv(Path(__file__).resolve().parent / ".env")
+SCRIPT_DIR = Path(__file__).resolve().parent
+load_dotenv(SCRIPT_DIR / ".env")
 
 
 def env(name, default=None, required=False):
@@ -103,9 +105,29 @@ def env_bool(name, default):
     return value.lower() in ("1", "true", "yes", "si", "sí", "on")
 
 
-CLIENT_SECRET = env("GCHAT_CLIENT_SECRET", required=True)
-TOKEN_FILE = Path(env("GCHAT_TOKEN_FILE", "token.json"))
-OUT_DIR = Path(env("GCHAT_OUT_DIR", "./gchat-backup"))
+def local_path(value):
+    """Las rutas relativas cuentan desde scripts/, se lance el script desde donde se lance."""
+    path = Path(value).expanduser()
+    return path if path.is_absolute() else SCRIPT_DIR / path
+
+
+def find_client_secret():
+    """GCHAT_CLIENT_SECRET si está; si no, el único client_secret_*.json que haya en scripts/."""
+    if env("GCHAT_CLIENT_SECRET"):
+        return local_path(env("GCHAT_CLIENT_SECRET"))
+    found = sorted(SCRIPT_DIR.glob("client_secret_*.json"))
+    if len(found) == 1:
+        return found[0]
+    if not found:
+        sys.exit(f"No encuentro el fichero client_secret_….json en {SCRIPT_DIR}. Déjalo ahí "
+                 "(te lo pasa quien mantiene el proyecto) o indica su ruta en GCHAT_CLIENT_SECRET.")
+    sys.exit(f"Hay {len(found)} ficheros client_secret_*.json en {SCRIPT_DIR}: deja solo uno "
+             "o indica cuál usar en GCHAT_CLIENT_SECRET.")
+
+
+CLIENT_SECRET = find_client_secret()
+TOKEN_FILE = local_path(env("GCHAT_TOKEN_FILE", "token.json"))
+OUT_DIR = local_path(env("GCHAT_OUT_DIR", "gchat-backup"))
 SPACE_TYPES = {t.strip().upper() for t in env(
     "GCHAT_SPACE_TYPES", "SPACE,GROUP_CHAT,DIRECT_MESSAGE").split(",") if t.strip()}
 SPACE_FILTER = env("GCHAT_SPACE_FILTER")
@@ -208,7 +230,7 @@ def get_credentials():
         except Exception:
             creds = None
     if not creds or not creds.valid:
-        flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET, SCOPES)
+        flow = InstalledAppFlow.from_client_secrets_file(str(CLIENT_SECRET), SCOPES)
         creds = flow.run_local_server(port=0, prompt="consent")
     TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
     TOKEN_FILE.write_text(creds.to_json(), encoding="utf-8")
