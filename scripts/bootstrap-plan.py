@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-"""Plans the Terraform in terraform/, classifies the plan and prints the command that applies it.
+"""Plans the bootstrap Terraform, classifies the plan and prints the one command that applies it.
 
-    python3 scripts/infra-plan.py            # plan
-    python3 scripts/infra-plan.py --import   # plan that also adopts APIs already enabled (imports.tf)
+    python3 scripts/bootstrap-plan.py             # plan (enable the APIs, or show drift)
+    python3 scripts/bootstrap-plan.py --import    # plan that adopts APIs already enabled (imports.tf)
+    python3 scripts/bootstrap-plan.py --destroy   # plan the teardown (disables the APIs)
 
-Runs Terraform through scripts/tf-env.py, so the project id comes from
-terraform/resources/env/.<env>.env (git-ignored). The plan is saved outside the repository,
+Runs Terraform in terraform/bootstrap/ through scripts/tf-env.py, so the project id comes from
+terraform/bootstrap/resources/env/.<env>.env (git-ignored). The plan is saved outside the repository,
 because it holds variable values. Nothing is applied: the script prints what the plan imports,
-creates, changes and deletes, refuses if it deletes or replaces anything, and otherwise prints
-the command that applies exactly this plan.
+creates, changes and deletes. A normal plan that deletes or replaces anything is refused; a
+--destroy plan lists every deletion instead. Then it prints the one command that applies
+exactly this plan.
 """
 
 import argparse
@@ -20,7 +22,7 @@ from collections import Counter
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-TERRAFORM_DIR = REPO / "terraform"
+BOOTSTRAP_DIR = REPO / "terraform" / "bootstrap"
 TF_ENV = REPO / "scripts" / "tf-env.py"
 
 
@@ -39,8 +41,8 @@ def fail(fact, hint):
 
 
 def tf(env, command):
-    """Runs a terraform command through tf-env.py in terraform/; stops on failure."""
-    result = subprocess.run([sys.executable, str(TF_ENV), "-e", env, "-r", command], cwd=TERRAFORM_DIR)
+    """Runs a terraform command through tf-env.py in terraform/bootstrap/; stops on failure."""
+    result = subprocess.run([sys.executable, str(TF_ENV), "-e", env, "-r", command], cwd=BOOTSTRAP_DIR)
     if result.returncode != 0:
         fail(f"'{command}' exited with code {result.returncode}",
              "Read the Terraform error above; for credentials run gcloud auth application-default login")
@@ -75,30 +77,43 @@ def classify(plan_json):
     return counts, destructive, updates
 
 
+def apply_command(env, plan_file):
+    """One line that works from any folder: cd, load the environment, apply this plan."""
+    if sys.platform == "win32":
+        return (f'cd "{BOOTSTRAP_DIR}"; .\\..\\..\\scripts\\tf-env.ps1 -e {env}; '
+                f'terraform apply "{plan_file}"; Remove-Item "{plan_file}"')
+    return (f'cd "{BOOTSTRAP_DIR}" && . ../../scripts/tf-env.sh -e {env} && '
+            f'terraform apply "{plan_file}" && rm -f "{plan_file}"')
+
+
 def main():
-    parser = argparse.ArgumentParser(prog="infra-plan.py", description=__doc__.split("\n")[0])
+    parser = argparse.ArgumentParser(prog="bootstrap-plan.py", description=__doc__.split("\n")[0])
     parser.add_argument("-e", "--env", default="default", help="tf-env environment (default: default)")
-    parser.add_argument("--import", dest="do_import", action="store_true",
-                        help="adopt the APIs that are already enabled in the project")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--import", dest="do_import", action="store_true",
+                      help="adopt the APIs that are already enabled in the project")
+    mode.add_argument("--destroy", action="store_true", help="plan the teardown: disables the APIs")
     args = parser.parse_args()
 
     if not TF_ENV.exists():
-        fail(f"No {TF_ENV}", "Restore scripts/tf-env.py from the repository with git checkout -- scripts/tf-env.py")
-    secrets = TERRAFORM_DIR / "resources" / "env" / f".{args.env}.env"
+        fail(f"No {TF_ENV}", "Restore it from the repository with git checkout -- scripts/tf-env.py")
+    secrets = BOOTSTRAP_DIR / "resources" / "env" / f".{args.env}.env"
     if not secrets.exists():
         fail(f"No {secrets}",
-             f"Copy terraform/resources/env/template.env to .{args.env}.env and set the GCP project id")
+             f"Copy terraform/bootstrap/resources/env/template.env to .{args.env}.env and set the GCP project id")
 
     plan_file = Path(tempfile.gettempdir()) / "google-chat-backup" / f"{args.env}.tfplan"
     plan_file.parent.mkdir(parents=True, exist_ok=True)
+    plan_file.unlink(missing_ok=True)
 
     step(1, 3, "Initialising Terraform")
     tf(args.env, "terraform init -input=false")
-    step(2, 3, "Planning" + (" with imports" if args.do_import else ""))
-    extra = " -var=import_existing_apis=true" if args.do_import else ""
+    label = " with imports" if args.do_import else " the teardown" if args.destroy else ""
+    step(2, 3, f"Planning{label}")
+    extra = " -var=import_existing_apis=true" if args.do_import else " -destroy" if args.destroy else ""
     tf(args.env, f"terraform plan -input=false{extra} -out={plan_file.as_posix()}")
     step(3, 3, "Reading the plan")
-    shown = subprocess.run(["terraform", "show", "-json", str(plan_file)], cwd=TERRAFORM_DIR,
+    shown = subprocess.run(["terraform", "show", "-json", str(plan_file)], cwd=BOOTSTRAP_DIR,
                            capture_output=True, text=True)
     if shown.returncode != 0:
         fail(f"terraform show could not read {plan_file}", "Run the same command again to make a new plan")
@@ -107,27 +122,22 @@ def main():
         + f"; {counts['output']} output value(s) change")
     for line in updates:
         say(f"  ~ {line}")
+    for address in destructive:
+        say(f"  {'-' if args.destroy else '✗'} {address}")
 
-    if destructive:
-        for address in destructive:
-            say(f"  ✗ {address}")
+    if destructive and not args.destroy:
         say(f"\n✗ The plan deletes or replaces {len(destructive)} resource(s); it is not applied")
         say("Hint: Find the change that intends each one before applying anything")
         plan_file.unlink(missing_ok=True)
         return 1
-    if not any(counts[a] for a in ("import", "create", "update", "output")):
-        say("\n✓ No changes: the infrastructure matches the configuration")
+    if not any(counts[a] for a in ("import", "create", "update", "output", "delete")):
+        say("\n✓ No changes: nothing to apply")
         plan_file.unlink(missing_ok=True)
         return 0
 
-    say(f"\n✓ Plan saved to {plan_file}; apply exactly this plan with:")
-    print(f"cd {TERRAFORM_DIR}")
-    if sys.platform == "win32":
-        print(f".\\..\\scripts\\tf-env.ps1 -e {args.env}")
-    else:
-        print(f". ../scripts/tf-env.sh -e {args.env}")
-    print(f'terraform apply "{plan_file}"')
-    say("Hint: Delete the plan file afterwards; it holds the project id")
+    say("\n✓ Plan saved. Apply exactly this plan (and delete it) with this one command:")
+    print(apply_command(args.env, plan_file))
+    say("Hint: Run it as one line; if the project changes in between, Terraform refuses the stale plan")
     return 0
 
 

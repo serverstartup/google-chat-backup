@@ -9,13 +9,21 @@ rights and no Google Cloud tools: each person exports what they would see in Cha
 Built for one scenario: an organization is shutting down Google Workspace and you want to keep
 your chats before it goes.
 
-This page is for the person making a backup. Setting up Google Cloud, giving a teammate access,
-reverting everything at the end and changing the code are in [CONTRIBUTING.md](CONTRIBUTING.md).
+The project has two phases, done by different people:
+
+| Phase | Who | When | Guide |
+|:--|:--|:--|:--|
+| **Bootstrap** | the maintainer | once: enable the Google Cloud APIs, register the app, give each teammate access; tear it all down at the end | [docs/how-to/bootstrap.md](docs/how-to/bootstrap.md) |
+| **Backup** | anyone with access, with their own account | whenever they want to save their chats | this page |
+
+This page is the backup. It needs no Google Cloud tools and no Terraform: only what the maintainer
+hands over. Changing the code is in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 **You need:** Git and [Python](https://www.python.org/downloads/) 3.9 or above (`python3 --version`;
 on Windows, `py --version`). The commands below use `python3`; on Windows type `py` instead.
 
-**Ask the project maintainer for** three things before you start:
+**Ask the project maintainer for** three things before you start (the maintainer's side is
+[Give a teammate access](docs/how-to/bootstrap.md#3-give-a-teammate-access)):
 
 1. Read access to the [serverstartup/google-chat-backup](https://github.com/serverstartup/google-chat-backup) repository.
 2. To be added as a test user of the app, with your work email. Without it, Google refuses your

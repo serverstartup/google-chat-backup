@@ -46,7 +46,7 @@ denylist.txt
 .vscode/
 
 # Terraform environment secrets (tf-env): resources/env/.<env>.env holds the project id
-terraform/resources/env/.*.env
+terraform/bootstrap/resources/env/.*.env
 *.tfplan
 # Copy of variables.tf that tf-env.py regenerates on every run (IDE support)
-terraform/resources/env/definitions.bak.tf
+terraform/bootstrap/resources/env/definitions.bak.tf
