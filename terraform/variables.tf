@@ -45,3 +45,9 @@ variable "org_id" {
   description = "Organization ID. Empty for a project without an organization. Only if create_project = true."
   default     = ""
 }
+
+variable "import_existing_apis" {
+  type        = bool
+  description = "If true, the plan imports the APIs in var.services that are already enabled in the project (imports.tf). Use it once, through scripts/infra-plan.py --import."
+  default     = false
+}
