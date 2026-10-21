@@ -39,12 +39,16 @@ plantilla en scripts/.env.example):
                         People API (directorio). Si la organización no lo permite,
                         se sigue sin nombres.                        [true]
   GCHAT_DRY_RUN         true/false: solo listar qué se exportaría    [false]
+  GCHAT_MIN_FREE_GB     espacio libre mínimo en disco, en GB. Por debajo, el backup
+                        se detiene limpio (guarda index y manifest) en vez de
+                        llenar el disco. Relanzar continúa donde se quedó.  [20]
 """
 
 import io
 import json
 import os
 import re
+import shutil
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -102,6 +106,10 @@ SINCE = env("GCHAT_SINCE")
 DOWNLOAD_ATTACHMENTS = env_bool("GCHAT_DOWNLOAD_ATTACHMENTS", True)
 RESOLVE_NAMES = env_bool("GCHAT_RESOLVE_NAMES", True)
 DRY_RUN = env_bool("GCHAT_DRY_RUN", False)
+try:
+    MIN_FREE_GB = float(env("GCHAT_MIN_FREE_GB", "20"))
+except ValueError:
+    sys.exit(f"GCHAT_MIN_FREE_GB no es un número: {env('GCHAT_MIN_FREE_GB')!r}")
 
 SCOPES = [
     "openid",
@@ -244,9 +252,22 @@ def wanted(space):
     return True
 
 
+class DiskFull(Exception):
+    pass
+
+
+def check_free_space():
+    """Corta antes de llenar el disco: se comprueba antes de cada espacio y cada adjunto."""
+    free_gb = shutil.disk_usage(OUT_DIR).free / 1024 ** 3
+    if free_gb < MIN_FREE_GB:
+        raise DiskFull(f"quedan {free_gb:.1f} GB libres en {OUT_DIR.resolve()}, "
+                       f"por debajo del mínimo GCHAT_MIN_FREE_GB={MIN_FREE_GB:g}")
+
+
 def download_attachment(chat, resource_name, dest: Path):
     if dest.exists() and dest.stat().st_size > 0:
         return "ya existía"
+    check_free_space()
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(dest.suffix + ".part")
     request = chat.media().download_media(resourceName=resource_name)
@@ -336,12 +357,18 @@ def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     people = PeopleResolver(creds, OUT_DIR / "people.json")
     index, failed = [], []
+    stopped = None
     started = datetime.now(timezone.utc).isoformat()
 
     for n, space in enumerate(spaces, 1):
         log(f"[{n}/{len(spaces)}] {space.get('displayName') or space['name']}")
         try:
+            check_free_space()
             index.append(export_space(chat, space, people))
+        except DiskFull as e:
+            stopped = str(e)
+            log(f"DETENIDO: {stopped}. Libera espacio y relanza: continúa sin repetir adjuntos.")
+            break
         except HttpError as e:
             log(f"  ERROR HTTP {e.resp.status}: se salta este espacio")
             failed.append({"name": space["name"], "displayName": space.get("displayName"),
@@ -359,10 +386,12 @@ def main():
             "since": SINCE,
             "downloadAttachments": DOWNLOAD_ATTACHMENTS,
             "resolveNames": RESOLVE_NAMES,
+            "minFreeGb": MIN_FREE_GB,
         },
         "spaces": len(index),
         "messages": sum(s["messages"] for s in index),
         "failed": failed,
+        "stoppedEarly": stopped,
     })
     log(f"Hecho: {len(index)} espacios, {sum(s['messages'] for s in index)} mensajes, "
         f"{len(failed)} con error")
