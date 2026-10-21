@@ -68,7 +68,7 @@ from pathlib import Path
 # The macOS system Python (3.9, built against LibreSSL) makes the Google libraries warn on every
 # run that the Python version is past end of life and that urllib3 wants OpenSSL. Neither affects
 # the backup, and both would bury the progress lines, so they are filtered before the imports.
-warnings.filterwarnings("ignore", message=r"You are using a Python version .* past its end of life")
+warnings.filterwarnings("ignore", category=FutureWarning, module=r"google\.")  # every google.* EOL notice
 warnings.filterwarnings("ignore", message=r"urllib3 v2 only supports OpenSSL")
 
 from google.auth.transport.requests import Request

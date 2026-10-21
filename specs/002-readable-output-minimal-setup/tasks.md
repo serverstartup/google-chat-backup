@@ -23,6 +23,6 @@ All code tasks touch `scripts/gchat_backup.py` and run in order.
 
 ## Phase 3: Verification
 
-- [ ] T012 Capture a preview and a real run over 3 chats on `/usr/bin/python3` (3.9) and check FR-001..FR-008 and SC-001/SC-002 on the captured stderr/stdout
-- [ ] T013 Fresh clone into an empty folder, place the client secret, run `./backup.sh --preview` with only the system `python3` (SC-003)
-- [ ] T014 Error paths: no client secret, `GCHAT_WORKERS=abc`, unknown flag — check message shape and exit codes 1/1/2
+- [X] T012 Capture a preview and a real run over 3 chats on `/usr/bin/python3` (3.9) and check FR-001..FR-008 and SC-001/SC-002 on the captured stderr/stdout
+- [X] T013 Fresh clone into an empty folder, place the client secret, run `./backup.sh --preview` with only the system `python3` (SC-003)
+- [X] T014 Error paths: no client secret, `GCHAT_WORKERS=abc`, unknown flag — check message shape and exit codes 1/1/2
