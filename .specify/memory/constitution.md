@@ -1,4 +1,6 @@
 <!--
+- 2.0.1 (PATCH): Principle IV points to docs/how-to/bootstrap.md, which absorbed
+  docs/REVERT.md and docs/MANUAL_STEPS.md; Terraform lives in terraform/bootstrap/.
 Sync Impact Report
 - Version: 1.0.0 → 2.0.0 (MAJOR: a constraint is redefined)
 - Modified sections: Operating constraints — documentation, code comments and runtime messages
@@ -51,9 +53,9 @@ Rationale: the repository is shareable and the data belongs to a client.
 ### IV. Reversibility
 
 - Everything enabled in GCP MUST be reverted with `terraform destroy` plus the steps in
-  `docs/REVERT.md`.
+  `docs/how-to/bootstrap.md` (task 4, teardown).
 - Terraform manages only what has an API; the manual part is documented in
-  `docs/MANUAL_STEPS.md`.
+  `docs/how-to/bootstrap.md` (task 2).
 
 Rationale: the GCP project is shared with the client and must be left as it was.
 
@@ -99,4 +101,4 @@ Rationale: a backup that looks complete and is not is discovered when there is n
   MINOR: a new principle or section; PATCH: wording).
 - The operating context with client data lives in `CLAUDE.local.md` (not versioned).
 
-**Version**: 2.0.0 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-10-21
+**Version**: 2.0.1 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-10-21
