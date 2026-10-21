@@ -90,6 +90,22 @@ scripts/gchat-backup/<usuario>/
   2023-06-12_nombre-de-la-persona/     chat 1 a 1
 ```
 
+### Más rápido: varios chats a la vez
+
+`GCHAT_WORKERS=4` en `scripts/.env` exporta 4 chats a la vez (por defecto, 1). Medido el
+2026-10-21 con 20 espacios: 59 s con 1 hilo, 19 s con 4, sin ningún reintento por cuota. Las
+cuotas de Google (3000 lecturas por minuto y proyecto) quedan muy lejos; si aun así Google
+responde "demasiadas peticiones", el script espera y reintenta solo. Máximo 16.
+
+### Guardarlo en Dropbox sin llenar el disco
+
+Apunta `GCHAT_OUT_DIR` a una carpeta de Dropbox y el backup se sube según se descarga. Para
+liberar espacio, en el Finder: clic derecho sobre la carpeta (o sobre un chat ya subido) →
+**Hacer disponible solo en línea**. El script sigue funcionando sobre esas carpetas: para saber
+si un adjunto ya está solo mira su tamaño, nunca lo abre, así que no obliga a Dropbox a bajarlo.
+No hay forma de hacerlo desde la terminal en macOS 15; también lo hace macOS solo cuando falta
+disco, con lo que no esté marcado como "disponible sin conexión".
+
 `scripts/.env` está en `.gitignore`: ahí van las rutas y los filtros (que pueden llevar
 nombres de espacios). Las variables del entorno real mandan sobre las del fichero.
 

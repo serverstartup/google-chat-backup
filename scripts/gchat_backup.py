@@ -40,6 +40,9 @@ plantilla en scripts/.env.example):
   GCHAT_SINCE           exportar solo mensajes desde esta fecha, p. ej. 2024-01-01   [todo]
   GCHAT_DOWNLOAD_ATTACHMENTS  true/false                             [true]
   GCHAT_DRY_RUN         true/false: solo listar qué se exportaría    [false]
+  GCHAT_WORKERS         chats que se exportan a la vez, de 1 a 16. Con 4 va unas 3 veces
+                        más rápido sin acercarse a las cuotas de Google; los reintentos
+                        ante "demasiadas peticiones" son automáticos.  [1]
   GCHAT_MIN_FREE_GB     espacio libre mínimo en disco, en GB. Por debajo, el backup
                         se detiene limpio (guarda index y manifest) en vez de
                         llenar el disco. Relanzar continúa donde se quedó.  [20]
@@ -51,7 +54,9 @@ import os
 import re
 import shutil
 import sys
+import threading
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -111,6 +116,10 @@ try:
     MIN_FREE_GB = float(env("GCHAT_MIN_FREE_GB", "20"))
 except ValueError:
     sys.exit(f"GCHAT_MIN_FREE_GB no es un número: {env('GCHAT_MIN_FREE_GB')!r}")
+_workers_raw = env("GCHAT_WORKERS", "1")
+if not _workers_raw.isdigit() or not 1 <= int(_workers_raw) <= 16:
+    sys.exit(f"GCHAT_WORKERS debe ser un entero entre 1 y 16: {_workers_raw!r}")
+WORKERS = int(_workers_raw)
 
 SCOPES = [
     "openid",
@@ -120,13 +129,21 @@ SCOPES = [
     "https://www.googleapis.com/auth/chat.messages.readonly",
 ]
 
-RETRIES = 5  # reintentos automáticos ante 429 (límite de peticiones) y errores 5xx
+RETRIES = 6  # reintentos ante 429 y 5xx, espera rand()*2^n: hasta 64 s, el techo que recomienda Google
 
 
 # ---------------------------------------------------------------- utilidades
 
+# Estado compartido entre hilos (GCHAT_WORKERS > 1)
+STOP = threading.Event()        # freno de disco o Ctrl-C: ningún hilo empieza nada nuevo
+_folders_lock = threading.Lock()  # elegir y crear carpeta de chat es una sola operación
+_log_lock = threading.Lock()
+_tls = threading.local()        # un cliente de la API por hilo: httplib2 no es seguro entre hilos
+
+
 def log(msg):
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
+    with _log_lock:
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
 
 
 def write_json(path: Path, data):
@@ -261,15 +278,24 @@ class DiskFull(Exception):
     pass
 
 
+class Stopped(Exception):
+    """Otro hilo activó la parada (freno de disco o Ctrl-C)."""
+
+
 def check_free_space():
     """Corta antes de llenar el disco: se comprueba antes de cada espacio y cada adjunto."""
+    if STOP.is_set():
+        raise Stopped()
     free_gb = shutil.disk_usage(OUT_DIR).free / 1024 ** 3
     if free_gb < MIN_FREE_GB:
+        STOP.set()
         raise DiskFull(f"quedan {free_gb:.1f} GB libres en {OUT_DIR.resolve()}, "
                        f"por debajo del mínimo GCHAT_MIN_FREE_GB={MIN_FREE_GB:g}")
 
 
 def download_attachment(chat, resource_name, dest: Path):
+    # Solo metadatos (stat): un fichero de Dropbox "solo en línea" se salta sin descargarlo.
+    # Un corte deja <nombre>.part, que no es dest, así que lo incompleto se vuelve a bajar.
     if dest.exists() and dest.stat().st_size > 0:
         return "ya existía"
     check_free_space()
@@ -286,16 +312,23 @@ def download_attachment(chat, resource_name, dest: Path):
 
 
 def resolve_space_dir(space, members, messages, user_dir: Path, exporter_email, known):
-    if space["name"] in known:
-        return known[space["name"]]
-    target = user_dir / folder_name(space, members, messages, exporter_email)
-    if target.exists():  # la misma carpeta ya la usa otro chat
-        target = target.with_name(f"{target.name}_{short_id(space['name'])}")
-    legacy = user_dir / "spaces" / short_id(space["name"])  # estructura antigua spaces/<id>/
-    if legacy.is_dir():
-        legacy.rename(target)
-    known[space["name"]] = target
-    return target
+    with _folders_lock:
+        if space["name"] in known:
+            return known[space["name"]]
+        target = user_dir / folder_name(space, members, messages, exporter_email)
+        owner = read_json(target / "space.json", {}).get("name") if target.exists() else None
+        if target.exists() and owner and owner != space["name"]:
+            # la carpeta es de otro chat con la misma fecha y nombre
+            target = target.with_name(f"{target.name}_{short_id(space['name'])}")
+        # (si existe sin space.json, es de un corte anterior de este mismo chat: se reaprovecha)
+        legacy = user_dir / "spaces" / short_id(space["name"])  # estructura antigua spaces/<id>/
+        if legacy.is_dir() and not target.exists():
+            legacy.rename(target)
+        target.mkdir(parents=True, exist_ok=True)
+        # space.json desde el principio: si se corta a mitad, el relanzamiento reconoce la carpeta
+        write_json(target / "space.json", space)
+        known[space["name"]] = target
+        return target
 
 
 def export_space(chat, space, user_dir: Path, exporter_email, known):
@@ -312,7 +345,7 @@ def export_space(chat, space, user_dir: Path, exporter_email, known):
     space_dir = resolve_space_dir(space, members, messages, user_dir, exporter_email, known)
     label = chat_label(space, members, exporter_email)
 
-    attachments_ok = attachments_err = drive_links = 0
+    attachments_new = attachments_had = attachments_err = drive_links = 0
     if DOWNLOAD_ATTACHMENTS:
         for msg in messages:
             for i, att in enumerate(msg.get("attachment", []) or []):
@@ -323,9 +356,12 @@ def export_space(chat, space, user_dir: Path, exporter_email, known):
                     continue
                 fname = f"{safe_name(short_id(msg['name']))}_{i}_{safe_name(att.get('contentName'))}"
                 try:
-                    download_attachment(chat, ref, space_dir / "attachments" / fname)
+                    result = download_attachment(chat, ref, space_dir / "attachments" / fname)
                     att["_localFile"] = f"attachments/{fname}"
-                    attachments_ok += 1
+                    if result == "descargado":
+                        attachments_new += 1
+                    else:
+                        attachments_had += 1
                 except HttpError as e:
                     att["_downloadError"] = f"HTTP {e.resp.status}"
                     attachments_err += 1
@@ -334,8 +370,9 @@ def export_space(chat, space, user_dir: Path, exporter_email, known):
     write_json(space_dir / "members.json", members)
     write_json(space_dir / "messages.json", messages)
 
-    log(f"  {label}: {len(messages)} mensajes, {len(members)} miembros, "
-        f"adjuntos {attachments_ok} ok / {attachments_err} error / {drive_links} en Drive")
+    log(f"  {label}: {len(messages)} mensajes, {len(members)} miembros, adjuntos "
+        f"{attachments_new} nuevos / {attachments_had} ya estaban / {attachments_err} error / "
+        f"{drive_links} en Drive")
 
     return {
         "id": space_id,
@@ -345,7 +382,8 @@ def export_space(chat, space, user_dir: Path, exporter_email, known):
         "spaceType": space.get("spaceType"),
         "messages": len(messages),
         "members": len(members),
-        "attachments": attachments_ok,
+        "attachments": attachments_new + attachments_had,
+        "attachmentsDownloaded": attachments_new,
         "attachmentErrors": attachments_err,
         "driveLinks": drive_links,
         "firstMessage": messages[0].get("createTime") if messages else None,
@@ -372,23 +410,55 @@ def main():
 
     user_dir.mkdir(parents=True, exist_ok=True)
     known = existing_folders(user_dir)
-    index, failed = [], []
-    stopped = None
     started = datetime.now(timezone.utc).isoformat()
+    total = len(spaces)
 
-    for n, space in enumerate(spaces, 1):
-        log(f"[{n}/{len(spaces)}] {space.get('displayName') or space['name']}")
+    def thread_chat():
+        if not hasattr(_tls, "chat"):
+            _tls.chat = build("chat", "v1", credentials=creds, cache_discovery=False)
+        return _tls.chat
+
+    def run_one(n, space):
+        """Exporta un chat en un hilo. Devuelve (estado, n, dato) y nunca lanza HttpError."""
+        if STOP.is_set():
+            return "skipped", n, None
+        log(f"[{n}/{total}] {space.get('displayName') or space['name']}")
         try:
             check_free_space()
-            index.append(export_space(chat, space, user_dir, exporter, known))
+            return "ok", n, export_space(thread_chat(), space, user_dir, exporter, known)
         except DiskFull as e:
-            stopped = str(e)
-            log(f"DETENIDO: {stopped}. Libera espacio y relanza: continúa sin repetir adjuntos.")
-            break
+            return "stopped", n, str(e)
+        except Stopped:
+            return "skipped", n, None
         except HttpError as e:
-            log(f"  ERROR HTTP {e.resp.status}: se salta este espacio")
-            failed.append({"name": space["name"], "displayName": space.get("displayName"),
-                           "error": f"HTTP {e.resp.status}"})
+            log(f"  ERROR HTTP {e.resp.status} en [{n}/{total}]: se salta este chat")
+            return "failed", n, {"name": space["name"], "displayName": space.get("displayName"),
+                                 "error": f"HTTP {e.resp.status}"}
+
+    if WORKERS > 1:
+        log(f"Exportando {WORKERS} chats a la vez")
+    results, stopped = {}, None
+    executor = ThreadPoolExecutor(max_workers=WORKERS)
+    try:
+        futures = [executor.submit(run_one, n, s) for n, s in enumerate(spaces, 1)]
+        for fut in as_completed(futures):
+            if fut.cancelled():
+                continue
+            status, n, data = fut.result()
+            results[n] = (status, data)
+            if status == "stopped" and stopped is None:
+                stopped = data
+                log(f"DETENIDO: {stopped}. Libera espacio y relanza: continúa sin repetir adjuntos.")
+                executor.shutdown(wait=False, cancel_futures=True)
+    except KeyboardInterrupt:
+        STOP.set()
+        log("Interrumpiendo: se espera a que cada hilo termine el adjunto en curso…")
+        executor.shutdown(wait=True, cancel_futures=True)
+        raise
+    executor.shutdown(wait=True)
+
+    index = [results[n][1] for n in sorted(results) if results[n][0] == "ok"]
+    failed = [results[n][1] for n in sorted(results) if results[n][0] == "failed"]
 
     legacy = user_dir / "spaces"
     if legacy.is_dir() and not any(legacy.iterdir()):
@@ -404,6 +474,7 @@ def main():
             "since": SINCE,
             "downloadAttachments": DOWNLOAD_ATTACHMENTS,
             "minFreeGb": MIN_FREE_GB,
+            "workers": WORKERS,
         },
         "spaces": len(index),
         "messages": sum(s["messages"] for s in index),
