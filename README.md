@@ -144,15 +144,22 @@ with thousands of attachments are the slowest. The output looks like this:
 
 Attachments stored in Google Drive are not downloaded; their link stays in the JSON. If free disk space drops below 20 GB the backup stops by itself
 ([Troubleshooting: the backup stops for lack of disk space](#troubleshooting-the-backup-stops-for-lack-of-disk-space)).
-The result is one folder per chat, `attachments/` only when it has any:
+The result is one folder per chat, under the year and month of its last message,
+`attachments/` only when it has any:
 
 ```text
 scripts/gchat-backup/<your-user>/
   index.json  manifest.json
-  2021-03-04_team-space/
-    space.json  members.json  messages.json
-    attachments/
+  2024/
+    03/
+      team-space/
+        space.json  members.json  messages.json
+        attachments/
 ```
+
+Another layout is one setting away (`GCHAT_FOLDER_TEMPLATE`,
+[Reference: settings](#reference-settings)); running the backup again moves the folders already
+there to it.
 
 ---
 
@@ -178,6 +185,7 @@ Nothing needs configuring. To change a default, put it in `scripts/.env` (copy
 | Setting | What it does | Default |
 |:--|:--|:--|
 | `GCHAT_OUT_DIR` | folder where the backup is stored (a Dropbox folder uploads it as it goes) | `gchat-backup` |
+| `GCHAT_FOLDER_TEMPLATE` | where each chat goes, `/` between folder levels: `{name}` chat name, `{last}` / `{first}` date of the last / first message (`{last:%Y%m%d}`; a bare `{last}` is `yyyymmdd`), `{type}`, `{id}`. A change moves the folders already there on the next run | `{last:%Y}/{last:%m}/{name}` |
 | `GCHAT_WORKERS` | chats backed up at the same time (1-16) | `4` |
 | `GCHAT_MIN_FREE_GB` | stop when less free disk space is left, in GB | `20` |
 | `GCHAT_DRY_RUN` | `true`: same as `--preview` | `false` |
