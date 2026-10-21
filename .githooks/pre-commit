@@ -2,7 +2,8 @@
 #
 # Quality gate. Aborts the commit if the stage contains:
 #   1) credentials or Terraform state (by file name), or
-#   2) any term from a LOCAL denylist (denylist.txt, gitignored).
+#   2) any term from a LOCAL denylist (denylist.txt, gitignored), or
+#   3) a credential, by its shape (gitleaks with .gitleaks.toml), when gitleaks is installed.
 #
 # The denylist lives only on your machine, so the forbidden term (e.g. the
 # client's name) never appears in a versioned file — not even in this hook.
@@ -48,6 +49,19 @@ if [ -f "$deny" ]; then
 $staged
 EOF2
   done < "$deny"
+fi
+
+# 3) Credentials by shape (gitleaks, rules in .gitleaks.toml). Without gitleaks it warns and
+#    goes on: the denylist and the file names above still run.
+if command -v gitleaks >/dev/null 2>&1; then
+  if ! gitleaks git --pre-commit --staged --config "$root/.gitleaks.toml" --redact --no-banner \
+       --log-level error "$root"; then
+    echo "pre-commit: gitleaks found a credential in the staged changes (value redacted above)."
+    fail=1
+  fi
+else
+  echo "pre-commit: gitleaks is not installed, so staged files were not scanned for credentials."
+  echo "            Install it: https://github.com/gitleaks/gitleaks#installing"
 fi
 
 if [ "$fail" -ne 0 ]; then
