@@ -147,7 +147,9 @@ When every backup is done, leave the project as it was: first what has no API, t
 1. In the console, delete the desktop OAuth client: *APIs & Services* → *Credentials* → bin icon.
 2. In the console, remove the test users and scopes from the consent screen, or leave the app in
    draft. An Internal app can stay.
-3. Optional: clear the Chat app configuration (*Google Chat API* → *Configuration*).
+3. Optional: turn the Chat app off: *Google Chat API* → *Configuration* → *App status* →
+   **Disabled** → **Save**. The configuration has no delete; only deleting the Cloud project
+   removes it ([Google: Turn off or delete a Chat app](https://developers.google.com/workspace/chat/turn-off-app)).
 4. Plan the teardown. → [Plan the teardown](#plan-the-teardown)
    ```bash
    python3 scripts/bootstrap-plan.py --destroy
